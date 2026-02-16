@@ -634,22 +634,24 @@ static void gen_heading(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
-                          int source_row)
+                          int source_row, int body_indent)
 {
     char *ct; CharStyle *cs; int cl;
     strip_inline(line, len, 0, CP_DEFAULT, &ct, &cs, &cl);
-    PreviewLine *pl = pv_add(pb, source_row, cl);
-    pv_copy(pl, 0, ct, cs, cl);
-    pl->text[cl] = '\0';
+    int total = body_indent + cl;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
+    pv_copy(pl, p, ct, cs, cl);
+    pl->text[total] = '\0';
     free(ct); free(cs);
 }
 
 static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row)
+                      int source_row, int body_indent)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
-    int indent = i;
+    int indent = body_indent + i;
     i++;                                       /* skip marker */
     if (i < len && line[i] == ' ') i++;
 
@@ -668,11 +670,11 @@ static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_olist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row)
+                      int source_row, int body_indent)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
-    int indent = i;
+    int indent = body_indent + i;
     int ns = i;
     while (i < len && isdigit((unsigned char)line[i])) i++;
     if (i < len && (line[i] == '.' || line[i] == ')')) i++;
@@ -697,11 +699,11 @@ static void gen_olist(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
-                           int source_row)
+                           int source_row, int body_indent)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
-    int indent = i;
+    int indent = body_indent + i;
     if (i < len && line[i] == '>') i++;
     if (i < len && line[i] == ' ') i++;
 
@@ -719,12 +721,29 @@ static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
     free(ct); free(cs);
 }
 
+/* Return the number of display columns a UTF-8 string occupies.
+   Assumes all non-ASCII characters are single-column width. */
+static int utf8_display_width(const char *s, int len)
+{
+    int cols = 0;
+    for (int i = 0; i < len; ) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 0x80)        { cols++; i += 1; }
+        else if (c < 0xC0)   {         i += 1; } /* stray continuation */
+        else if (c < 0xE0)   { cols++; i += 2; }
+        else if (c < 0xF0)   { cols++; i += 3; }
+        else                  { cols++; i += 4; }
+    }
+    return cols;
+}
+
 /* Generate a boxed code block.
    fence_row  = row of the opening ``` line (used for language label).
    content_start .. content_end-1 = rows of actual code content. */
 static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
                            int fence_row, int content_start,
-                           int content_end, int screen_cols)
+                           int content_end, int screen_cols,
+                           int body_indent)
 {
     /* Extract language label from opening fence */
     char *fence = buffer_line_data(buf, fence_row);
@@ -735,31 +754,33 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
     while (fi < flen && fence[fi] != ' ' && fence[fi] != '`' && fence[fi] != '~') fi++;
     int lang_len = fi - lang_start;
 
-    /* Find max content width */
+    /* Find max content display width (columns, not bytes) */
     int max_w = 0;
     for (int r = content_start; r < content_end; r++) {
-        int l = buffer_line_len(buf, r);
-        if (l > max_w) max_w = l;
+        int dw = utf8_display_width(buffer_line_data(buf, r),
+                                    buffer_line_len(buf, r));
+        if (dw > max_w) max_w = dw;
     }
 
-    /* Box internal width: at least lang_len+2 or 20, capped to screen */
+    /* box_w is in display columns */
     int box_w = max_w;
     if (lang_len + 2 > box_w) box_w = lang_len + 2;
     if (box_w < 20) box_w = 20;
-    int max_box = screen_cols - 4;
+    int max_box = screen_cols - body_indent - 4;
     if (max_box > 0 && box_w > max_box) box_w = max_box;
 
-    int total = box_w + 4;   /* │ + space + content + space + │ */
+    /* Border total is in display columns (all single-byte chars) */
+    int border_total = body_indent + box_w + 4;
 
     /* ── Top border: ┌─ language ──────┐ ── */
     {
-        PreviewLine *pl = pv_add(pb, fence_row, total);
-        int p = 0;
+        PreviewLine *pl = pv_add(pb, fence_row, border_total);
+        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_ULCORNER, 0, CP_DIMMED); p++;
         if (lang_len > 0) {
             pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
             pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
-            for (int j = 0; j < lang_len && p < total - 1; j++) {
+            for (int j = 0; j < lang_len && p < border_total - 1; j++) {
                 pl->text[p] = fence[lang_start + j];
                 pl->styles[p].attr  = A_BOLD;
                 pl->styles[p].cpair = CP_CODE_BLOCK;
@@ -767,26 +788,36 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
             }
             pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
         }
-        while (p < total - 1) {
+        while (p < border_total - 1) {
             pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
         }
         pv_set_acs(pl, p, PM_URCORNER, 0, CP_DIMMED); p++;
         pl->len = p; pl->text[p] = '\0';
     }
 
-    /* ── Content lines: │ code padded │ ── */
+    /* ── Content lines: │ code padded │ ──
+       Each line may have multi-byte UTF-8 chars, so its byte count can
+       exceed its display width.  We copy all bytes, then pad with spaces
+       to fill box_w display columns. */
     for (int r = content_start; r < content_end; r++) {
         char *line = buffer_line_data(buf, r);
         int   len  = buffer_line_len(buf, r);
-        PreviewLine *pl = pv_add(pb, r, total);
-        int p = 0;
+        int   dw   = utf8_display_width(line, len);
+        int   pad  = box_w - dw;
+        if (pad < 0) pad = 0;
+        /* byte length of this preview line: indent + borders/spaces + content bytes + padding */
+        int line_bytes = body_indent + 4 + len + pad;
+
+        PreviewLine *pl = pv_add(pb, r, line_bytes);
+        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
         pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
-        for (int j = 0; j < box_w; j++) {
-            pl->text[p]         = (j < len) ? line[j] : ' ';
+        for (int j = 0; j < len; j++) {
+            pl->text[p]         = line[j];
             pl->styles[p].cpair = CP_CODE_BLOCK;
             p++;
         }
+        p = pv_fill(pl, p, pad, ' ', 0, CP_CODE_BLOCK);
         pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
         pl->len = p; pl->text[p] = '\0';
@@ -794,8 +825,8 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
 
     /* If the code block is empty, add one blank content line */
     if (content_start >= content_end) {
-        PreviewLine *pl = pv_add(pb, fence_row, total);
-        int p = 0;
+        PreviewLine *pl = pv_add(pb, fence_row, border_total);
+        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
         p = pv_fill(pl, p, box_w + 2, ' ', 0, CP_CODE_BLOCK);
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
@@ -805,10 +836,10 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
     /* ── Bottom border: └──────────────┘ ── */
     {
         int src = (content_end > content_start) ? content_end - 1 : fence_row;
-        PreviewLine *pl = pv_add(pb, src, total);
-        int p = 0;
+        PreviewLine *pl = pv_add(pb, src, border_total);
+        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_LLCORNER, 0, CP_DIMMED); p++;
-        while (p < total - 1) {
+        while (p < border_total - 1) {
             pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
         }
         pv_set_acs(pl, p, PM_LRCORNER, 0, CP_DIMMED); p++;
@@ -816,12 +847,15 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
     }
 }
 
-static void gen_hrule(PreviewBuffer *pb, int source_row, int screen_cols)
+static void gen_hrule(PreviewBuffer *pb, int source_row, int screen_cols,
+                      int body_indent)
 {
-    int w = (screen_cols > 0) ? screen_cols : 40;
-    PreviewLine *pl = pv_add(pb, source_row, w);
-    pv_fill_acs(pl, 0, w, PM_HLINE, A_DIM, CP_HRULE);
-    pl->text[w] = '\0';
+    int rule_w = (screen_cols > body_indent) ? screen_cols - body_indent : 20;
+    int total = body_indent + rule_w;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
+    pv_fill_acs(pl, p, rule_w, PM_HLINE, A_DIM, CP_HRULE);
+    pl->text[total] = '\0';
 }
 
 static void gen_empty(PreviewBuffer *pb, int source_row)
@@ -892,13 +926,13 @@ static void free_trow(TRow *r)
 
 /* kind: 0 = top  ┌─┬─┐   1 = mid  ├─┼─┤   2 = bot  └─┴─┘ */
 static void gen_table_border(PreviewBuffer *pb, int *cw, int ncols,
-                             int kind, int source_row)
+                             int kind, int source_row, int body_indent)
 {
-    int total = 1;
+    int total = body_indent + 1;
     for (int c = 0; c < ncols; c++) total += cw[c] + 2 + 1;
 
     PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = 0;
+    int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
     unsigned char lc, mc, rc;
     switch (kind) {
     case 0: lc = PM_ULCORNER; mc = PM_TTEE; rc = PM_URCORNER; break;
@@ -916,13 +950,14 @@ static void gen_table_border(PreviewBuffer *pb, int *cw, int ncols,
 }
 
 static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
-                              int ncols, int is_hdr, int source_row)
+                              int ncols, int is_hdr, int source_row,
+                              int body_indent)
 {
-    int total = 1;
+    int total = body_indent + 1;
     for (int c = 0; c < ncols; c++) total += cw[c] + 2 + 1;
 
     PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = 0;
+    int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
     attr_t ca = is_hdr ? A_BOLD : 0;
     short  cc = is_hdr ? CP_HEADING2 : CP_DEFAULT;
 
@@ -944,7 +979,8 @@ static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
 }
 
 static void gen_table_block(PreviewBuffer *pb, Buffer *buf,
-                            int start, int end, int screen_cols)
+                            int start, int end, int screen_cols,
+                            int body_indent)
 {
     int nr = end - start;
     TRow *rows = calloc(nr, sizeof(TRow));
@@ -970,20 +1006,20 @@ static void gen_table_block(PreviewBuffer *pb, Buffer *buf,
 
     (void)screen_cols;
 
-    gen_table_border(pb, cw, max_cols, 0, start);
+    gen_table_border(pb, cw, max_cols, 0, start, body_indent);
 
     int found_sep = 0;
     for (int i = 0; i < nr; i++) {
         if (rows[i].is_sep) {
-            gen_table_border(pb, cw, max_cols, 1, start + i);
+            gen_table_border(pb, cw, max_cols, 1, start + i, body_indent);
             found_sep = 1;
         } else {
             gen_table_content(pb, &rows[i], cw, max_cols,
-                              !found_sep, start + i);
+                              !found_sep, start + i, body_indent);
         }
     }
 
-    gen_table_border(pb, cw, max_cols, 2, end - 1);
+    gen_table_border(pb, cw, max_cols, 2, end - 1, body_indent);
 
     for (int i = 0; i < nr; i++) free_trow(&rows[i]);
     free(rows);
@@ -998,6 +1034,7 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
     preview_free(pb);
 
     int in_code = 0;
+    int body_indent = 0;
     int row = 0;
 
     while (row < buf->num_lines) {
@@ -1020,7 +1057,7 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
             }
             int content_end = row;          /* exclusive */
             gen_code_block(pb, buf, fence_open, content_start,
-                           content_end, screen_cols);
+                           content_end, screen_cols, body_indent);
             if (found_close) row++;         /* skip closing fence */
             continue;
         }
@@ -1036,29 +1073,33 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
                     break;
                 row++;
             }
-            gen_table_block(pb, buf, ts, row, screen_cols);
+            gen_table_block(pb, buf, ts, row, screen_cols, body_indent);
             continue;
         }
 
         switch (bt) {
         case BLOCK_HEADING:
-            gen_heading(pb, line, len, row, screen_cols); break;
+            gen_heading(pb, line, len, row, screen_cols);
+            { int hl = render_heading_level(line);
+              body_indent = (hl <= 1) ? 0 : (hl - 1) * 2;
+              if (body_indent > 8) body_indent = 8; }
+            break;
         case BLOCK_HRULE:
-            gen_hrule(pb, row, screen_cols); break;
+            gen_hrule(pb, row, screen_cols, body_indent); break;
         case BLOCK_LIST_UNORDERED:
-            gen_ulist(pb, line, len, row); break;
+            gen_ulist(pb, line, len, row, body_indent); break;
         case BLOCK_LIST_ORDERED:
-            gen_olist(pb, line, len, row); break;
+            gen_olist(pb, line, len, row, body_indent); break;
         case BLOCK_BLOCKQUOTE:
-            gen_blockquote(pb, line, len, row); break;
+            gen_blockquote(pb, line, len, row, body_indent); break;
         case BLOCK_CODE_CONTENT:
             /* Shouldn't happen — code blocks are collected above.
                Fall through to paragraph as a safety net. */
-            gen_paragraph(pb, line, len, row); break;
+            gen_paragraph(pb, line, len, row, body_indent); break;
         case BLOCK_EMPTY:
             gen_empty(pb, row); break;
         default:
-            gen_paragraph(pb, line, len, row); break;
+            gen_paragraph(pb, line, len, row, body_indent); break;
         }
         row++;
     }
