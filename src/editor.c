@@ -334,6 +334,107 @@ static void editor_goto_line(Editor *ed)
 }
 
 /* ================================================================
+ *  Preview mode
+ * ================================================================ */
+
+static void editor_toggle_preview(Editor *ed)
+{
+    if (ed->preview_mode) {
+        /* Leave preview → edit */
+        preview_free(&ed->preview_buf);
+        ed->preview_mode = 0;
+        curs_set(1);
+        editor_set_status(ed, "Edit mode");
+    } else {
+        /* Enter preview */
+        getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+        ed->screen_rows -= 2;
+        preview_generate(&ed->preview_buf, &ed->buf, ed->screen_cols);
+        ed->preview_mode = 1;
+        ed->preview_scroll_y = preview_find_line(&ed->preview_buf,
+                                                 ed->scroll_y);
+        curs_set(0);
+        editor_set_status(ed, "Preview mode — Ctrl+P or q to return");
+    }
+}
+
+static void clamp_preview_scroll(Editor *ed)
+{
+    int max_s = ed->preview_buf.num_lines - ed->screen_rows;
+    if (max_s < 0) max_s = 0;
+    if (ed->preview_scroll_y > max_s) ed->preview_scroll_y = max_s;
+    if (ed->preview_scroll_y < 0)     ed->preview_scroll_y = 0;
+}
+
+static void editor_preview_process_key(Editor *ed, int c)
+{
+    switch (c) {
+    case CTRL_KEY('p'):
+    case 'q':
+    case 27:                              /* Escape */
+        editor_toggle_preview(ed);
+        break;
+
+    case CTRL_KEY('q'):
+        ed->quit = 1;
+        break;
+
+    case KEY_UP:
+    case 'k':
+        ed->preview_scroll_y--;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_DOWN:
+    case 'j':
+    case '\r':
+    case '\n':
+    case KEY_ENTER:
+        ed->preview_scroll_y++;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_PPAGE:
+        ed->preview_scroll_y -= ed->screen_rows;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_NPAGE:
+    case ' ':
+        ed->preview_scroll_y += ed->screen_rows;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_HOME:
+    case 'g':
+        ed->preview_scroll_y = 0;
+        break;
+
+    case KEY_END:
+    case 'G':
+        ed->preview_scroll_y = ed->preview_buf.num_lines - ed->screen_rows;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_RESIZE: {
+        getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+        ed->screen_rows -= 2;
+        int src = (ed->preview_scroll_y < ed->preview_buf.num_lines)
+                  ? ed->preview_buf.lines[ed->preview_scroll_y].source_row
+                  : 0;
+        preview_free(&ed->preview_buf);
+        preview_generate(&ed->preview_buf, &ed->buf, ed->screen_cols);
+        ed->preview_scroll_y = preview_find_line(&ed->preview_buf, src);
+        clamp_preview_scroll(ed);
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+/* ================================================================
  *  Screen drawing
  * ================================================================ */
 
@@ -389,6 +490,20 @@ static void editor_draw_rows(Editor *ed)
     }
 }
 
+static void editor_draw_preview_rows(Editor *ed)
+{
+    for (int y = 0; y < ed->screen_rows; y++) {
+        int prow = ed->preview_scroll_y + y;
+        if (prow < ed->preview_buf.num_lines) {
+            preview_draw_line(y, ed->screen_cols,
+                              &ed->preview_buf.lines[prow], 0);
+        } else {
+            move(y, 0);
+            clrtoeol();
+        }
+    }
+}
+
 static void editor_draw_statusbar(Editor *ed)
 {
     int y = ed->screen_rows;
@@ -397,11 +512,23 @@ static void editor_draw_statusbar(Editor *ed)
     attron(COLOR_PAIR(CP_STATUSBAR));
 
     char left[256], right[128];
-    int llen = snprintf(left, sizeof(left), " %s%s",
+    int llen, rlen;
+
+    if (ed->preview_mode) {
+        llen = snprintf(left, sizeof(left), " %s [PREVIEW]",
+                        ed->filename ? ed->filename : "[New File]");
+        int cur = ed->preview_scroll_y + 1;
+        int tot = ed->preview_buf.num_lines;
+        int pct = tot > 0 ? cur * 100 / tot : 100;
+        rlen = snprintf(right, sizeof(right), "%d%% (%d/%d) ",
+                        pct, cur, tot);
+    } else {
+        llen = snprintf(left, sizeof(left), " %s%s",
                         ed->filename ? ed->filename : "[New File]",
                         ed->dirty ? " [+]" : "");
-    int rlen = snprintf(right, sizeof(right), "Ln %d, Col %d  %d lines ",
+        rlen = snprintf(right, sizeof(right), "Ln %d, Col %d  %d lines ",
                         ed->cy + 1, ed->cx + 1, ed->buf.num_lines);
+    }
     if (llen < 0) llen = 0;
     if (rlen < 0) rlen = 0;
 
@@ -430,9 +557,13 @@ static void editor_draw_statusbar(Editor *ed)
             addch((unsigned char)ed->statusmsg[i]);
         attroff(A_BOLD);
     } else {
-        const char *help =
-            "Ctrl+S Save | Ctrl+Q Quit | Ctrl+F Search | "
-            "Ctrl+N Next | Ctrl+G Go to line";
+        const char *help;
+        if (ed->preview_mode)
+            help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
+                   "q/Esc/Ctrl+P Edit mode | Ctrl+Q Quit";
+        else
+            help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+F Search | "
+                   "Ctrl+N Next | Ctrl+G Go to line | Ctrl+P Preview";
         attron(A_DIM);
         int hl = (int)strlen(help);
         if (hl > ed->screen_cols) hl = ed->screen_cols;
@@ -448,14 +579,25 @@ static void editor_refresh_screen(Editor *ed)
     ed->screen_rows -= 2;          /* status bar + message line */
     if (ed->screen_rows < 1) ed->screen_rows = 1;
 
-    editor_scroll(ed);
-    editor_draw_rows(ed);
+    if (ed->preview_mode) {
+        clamp_preview_scroll(ed);
+        editor_draw_preview_rows(ed);
+    } else {
+        editor_scroll(ed);
+        editor_draw_rows(ed);
+    }
+
     editor_draw_statusbar(ed);
 
-    /* Place the visible cursor */
-    int vis_y = ed->cy - ed->scroll_y;
-    int vis_x = ed->cx - ed->scroll_x;
-    move(vis_y, vis_x);
+    if (ed->preview_mode) {
+        /* Hide cursor in preview */
+        move(ed->screen_rows, 0);
+    } else {
+        /* Place the visible cursor */
+        int vis_y = ed->cy - ed->scroll_y;
+        int vis_x = ed->cx - ed->scroll_x;
+        move(vis_y, vis_x);
+    }
 
     refresh();
 }
@@ -467,6 +609,12 @@ static void editor_refresh_screen(Editor *ed)
 static void editor_process_key(Editor *ed)
 {
     int c = getch();
+
+    /* Preview mode has its own key handler */
+    if (ed->preview_mode) {
+        editor_preview_process_key(ed, c);
+        return;
+    }
 
     if (c != CTRL_KEY('q'))
         ed->quit_times = TMDE_QUIT_TIMES;
@@ -502,6 +650,11 @@ static void editor_process_key(Editor *ed)
     /* ── Go to line ── */
     case CTRL_KEY('g'):
         editor_goto_line(ed);
+        break;
+
+    /* ── Preview ── */
+    case CTRL_KEY('p'):
+        editor_toggle_preview(ed);
         break;
 
     /* ── Delete to end of line ── */
@@ -587,6 +740,7 @@ void editor_init(Editor *ed)
 void editor_free(Editor *ed)
 {
     buffer_free(&ed->buf);
+    preview_free(&ed->preview_buf);
     free(ed->filename);
     ed->filename = NULL;
 }
@@ -605,7 +759,8 @@ void editor_run(Editor *ed)
         render_init_colors();
 
     editor_set_status(ed,
-        "tmde — Terminal Markdown Editor  |  Ctrl+Q Quit  |  Ctrl+S Save");
+        "tmde — Terminal Markdown Editor  |  "
+        "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Preview");
 
     while (!ed->quit) {
         editor_refresh_screen(ed);

@@ -22,17 +22,18 @@ jljlj
 
 ## Key Bindings
 
-| Key       | Action              |
-|-----------|---------------------|
-| Ctrl+S    | Save file           |
-| Ctrl+Q    | Quit (with confirm) |
-| Ctrl+F    | Search              |
-| Ctrl+N    | Find next match     |
-| Ctrl+G    | Go to line number   |
-| Ctrl+K    | Delete to end of line |
-| Ctrl+A    | Beginning of line   |
-| Ctrl+E    | End of line         |
-| Ctrl+L    | Refresh screen      |
+| Key       | Action               |
+|-----------|----------------------|
+| Ctrl+S    | Save file            |
+| Ctrl+Q    | Quit (with confirm)  |
+| Ctrl+P    | Toggle preview mode  |
+| Ctrl+F    | Search               |
+| Ctrl+N    | Find next match      |
+| Ctrl+G    | Go to line number    |
+| Ctrl+K    | Delete to end of line|
+| Ctrl+A    | Beginning of line    |
+| Ctrl+E    | End of line          |
+| Ctrl+L    | Refresh screen       |
 
 > This is a blockquote. It should appear in a distinct color
 > with the `>` marker highlighted.

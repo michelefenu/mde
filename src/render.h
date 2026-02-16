@@ -2,6 +2,7 @@
 #define RENDER_H
 
 #include <ncurses.h>
+#include "buffer.h"
 
 /* Color pairs */
 enum {
@@ -38,8 +39,9 @@ typedef enum {
 
 /* Per-character style for rendering */
 typedef struct {
-    attr_t attr;
-    short  cpair;
+    attr_t        attr;
+    short         cpair;
+    unsigned char acs;    /* 0 = normal char, >0 = ACS marker id (PM_*) */
 } CharStyle;
 
 void      render_init_colors(void);
@@ -49,5 +51,41 @@ void      render_draw_line(int screen_y, int screen_cols,
 BlockType render_get_block_type(const char *line, int in_code_block);
 int       render_is_code_fence(const char *line);
 int       render_heading_level(const char *line);
+
+/* ── Preview mode ── */
+
+/* ACS marker IDs stored in CharStyle.acs.
+   Converted to real ACS characters at draw time. */
+#define PM_VLINE     1
+#define PM_HLINE     2
+#define PM_ULCORNER  3
+#define PM_URCORNER  4
+#define PM_LLCORNER  5
+#define PM_LRCORNER  6
+#define PM_LTEE      7
+#define PM_RTEE      8
+#define PM_TTEE      9
+#define PM_BTEE     10
+#define PM_PLUS     11
+#define PM_BULLET   12
+
+typedef struct {
+    char      *text;       /* may contain PM_* marker bytes */
+    CharStyle *styles;
+    int        len;
+    int        source_row; /* originating buffer line (-1 = virtual) */
+} PreviewLine;
+
+typedef struct {
+    PreviewLine *lines;
+    int          num_lines;
+    int          cap_lines;
+} PreviewBuffer;
+
+void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols);
+void preview_free(PreviewBuffer *pb);
+void preview_draw_line(int screen_y, int screen_cols,
+                       PreviewLine *pl, int scroll_x);
+int  preview_find_line(PreviewBuffer *pb, int buffer_row);
 
 #endif

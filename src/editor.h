@@ -2,6 +2,7 @@
 #define EDITOR_H
 
 #include "buffer.h"
+#include "render.h"
 #include <time.h>
 
 #define TMDE_QUIT_TIMES        2
@@ -27,6 +28,10 @@ typedef struct {
     int    search_saved_cx;
     int    search_saved_cy;
     int    search_saved_scroll_y;
+    /* Preview mode */
+    int           preview_mode;
+    PreviewBuffer preview_buf;
+    int           preview_scroll_y;
 } Editor;
 
 void editor_init(Editor *ed);

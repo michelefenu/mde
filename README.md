@@ -9,8 +9,10 @@ rendering of markdown formatting directly in the terminal using ncurses.
 
 - **Live markdown rendering** — headings, bold, italic, strikethrough, inline code,
   links, lists, blockquotes, code blocks, and horizontal rules are styled in real time
-- **Syntax markers dimmed** — markdown delimiters (`#`, `*`, `` ` ``, etc.) are shown
-  in a muted colour so the content stands out
+- **Preview mode** — Ctrl+P toggles a read-only rendered view with hidden syntax
+  markers, man-page-style heading indentation, and box-drawing table borders
+- **Syntax markers dimmed** — in edit mode, markdown delimiters (`#`, `*`, `` ` ``, etc.)
+  are shown in a muted colour so the content stands out
 - **Incremental search** — Ctrl+F with live highlighting, Ctrl+N for next match
 - **Status bar** — filename, cursor position, line count, and unsaved-change indicator
 - **Modeless editing** — always in edit mode, commands via Ctrl+key combinations
@@ -48,10 +50,13 @@ This produces the `tmde` binary in the project root.
 
 ## Key Bindings
 
+### Edit Mode
+
 | Key           | Action                          |
 |---------------|---------------------------------|
 | Ctrl+S        | Save (prompts for name if new)  |
 | Ctrl+Q        | Quit (confirm if unsaved)       |
+| Ctrl+P        | Switch to preview mode          |
 | Ctrl+F        | Incremental search              |
 | Ctrl+N        | Find next search match          |
 | Ctrl+G        | Go to line number               |
@@ -63,6 +68,18 @@ This produces the `tmde` binary in the project root.
 | Page Up/Down  | Scroll by page                  |
 | Arrow keys    | Navigate                        |
 | Escape        | Clear search highlighting       |
+
+### Preview Mode
+
+| Key               | Action                          |
+|-------------------|---------------------------------|
+| Ctrl+P / q / Esc  | Return to edit mode             |
+| j / k / Arrows    | Scroll up / down                |
+| Space / Page Down | Scroll down by page             |
+| Page Up           | Scroll up by page               |
+| g / Home          | Jump to top                     |
+| G / End           | Jump to bottom                  |
+| Ctrl+Q            | Quit                            |
 
 ## Supported Markdown
 

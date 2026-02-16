@@ -468,3 +468,649 @@ void render_draw_line(int screen_y, int screen_cols,
 
     free(styles);
 }
+
+/* ================================================================
+ *  Preview mode — inline markdown stripping
+ * ================================================================ */
+
+/* Run the same multi-pass inline analysis as edit mode, then build a
+   new string that omits delimiter characters (claimed == 1). */
+static void strip_inline(const char *src, int src_len,
+                         attr_t base_attr, short base_cpair,
+                         char **out_text, CharStyle **out_styles,
+                         int *out_len)
+{
+    if (src_len <= 0) {
+        *out_text   = calloc(1, 1);
+        *out_styles = calloc(1, sizeof(CharStyle));
+        *out_len    = 0;
+        return;
+    }
+
+    CharStyle *raw = calloc(src_len + 1, sizeof(CharStyle));
+    for (int i = 0; i < src_len; i++) {
+        raw[i].attr  = base_attr;
+        raw[i].cpair = base_cpair;
+    }
+
+    char *claimed = calloc(src_len + 1, 1);
+    apply_code_spans(src, src_len, raw, claimed);
+    apply_emphasis(src, src_len, raw, claimed, 3);
+    apply_emphasis(src, src_len, raw, claimed, 2);
+    apply_emphasis(src, src_len, raw, claimed, 1);
+    apply_strikethrough(src, src_len, raw, claimed);
+    apply_links(src, src_len, raw, claimed);
+
+    char      *text   = malloc(src_len + 1);
+    CharStyle *styles = malloc((src_len + 1) * sizeof(CharStyle));
+    int        len    = 0;
+
+    for (int i = 0; i < src_len; i++) {
+        if (claimed[i] == 1) continue;          /* skip delimiters */
+        text[len]   = src[i];
+        styles[len] = raw[i];
+        if (styles[len].cpair == CP_DIMMED) {   /* safety: no dim leaks */
+            styles[len].attr  = base_attr;
+            styles[len].cpair = base_cpair;
+        }
+        len++;
+    }
+    text[len] = '\0';
+
+    free(raw);
+    free(claimed);
+    *out_text   = text;
+    *out_styles = styles;
+    *out_len    = len;
+}
+
+/* ================================================================
+ *  Preview buffer helpers
+ * ================================================================ */
+
+static PreviewLine *pv_add(PreviewBuffer *pb, int source_row, int len)
+{
+    if (pb->num_lines >= pb->cap_lines) {
+        pb->cap_lines = pb->cap_lines ? pb->cap_lines * 2 : 256;
+        pb->lines = realloc(pb->lines, sizeof(PreviewLine) * pb->cap_lines);
+    }
+    PreviewLine *pl = &pb->lines[pb->num_lines++];
+    memset(pl, 0, sizeof(*pl));
+    pl->source_row = source_row;
+    pl->len        = len;
+    pl->text       = calloc(len + 1, 1);
+    pl->styles     = calloc(len + 1, sizeof(CharStyle));
+    return pl;
+}
+
+static int pv_fill(PreviewLine *pl, int pos, int n,
+                   char ch, attr_t attr, short cpair)
+{
+    for (int i = 0; i < n; i++) {
+        pl->text[pos]         = ch;
+        pl->styles[pos].attr  = attr;
+        pl->styles[pos].cpair = cpair;
+        pos++;
+    }
+    return pos;
+}
+
+/* Copy stripped text + styles into a preview line at offset `pos`. */
+static int pv_copy(PreviewLine *pl, int pos,
+                   const char *t, const CharStyle *s, int n)
+{
+    memcpy(pl->text   + pos, t, n);
+    memcpy(pl->styles + pos, s, n * sizeof(CharStyle));
+    return pos + n;
+}
+
+/* Fill N positions with an ACS marker (stored in styles, not text). */
+static int pv_fill_acs(PreviewLine *pl, int pos, int n,
+                       unsigned char acs_id, attr_t attr, short cpair)
+{
+    for (int i = 0; i < n; i++) {
+        pl->text[pos]         = ' ';
+        pl->styles[pos].attr  = attr;
+        pl->styles[pos].cpair = cpair;
+        pl->styles[pos].acs   = acs_id;
+        pos++;
+    }
+    return pos;
+}
+
+/* Set a single position to an ACS marker. */
+static void pv_set_acs(PreviewLine *pl, int pos,
+                       unsigned char acs_id, attr_t attr, short cpair)
+{
+    pl->text[pos]         = ' ';
+    pl->styles[pos].attr  = attr;
+    pl->styles[pos].cpair = cpair;
+    pl->styles[pos].acs   = acs_id;
+}
+
+/* ================================================================
+ *  Preview generators — one per block type
+ * ================================================================ */
+
+static void gen_heading(PreviewBuffer *pb, const char *line, int len,
+                        int source_row, int screen_cols)
+{
+    int hlevel = render_heading_level(line);
+    int indent = (hlevel <= 1) ? 0 : (hlevel - 1) * 2;
+    if (indent > 8) indent = 8;
+
+    short cpair;
+    switch (hlevel) {
+    case 1:  cpair = CP_HEADING1; break;
+    case 2:  cpair = CP_HEADING2; break;
+    case 3:  cpair = CP_HEADING3; break;
+    default: cpair = CP_HEADING4; break;
+    }
+
+    /* Skip past # markers */
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    while (i < len && line[i] == '#') i++;
+    if (i < len && line[i] == ' ') i++;
+
+    char *ct; CharStyle *cs; int cl;
+    strip_inline(line + i, len - i, A_BOLD, cpair, &ct, &cs, &cl);
+
+    int total = indent + cl;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
+    p = pv_copy(pl, p, ct, cs, cl);
+    pl->len = p; pl->text[p] = '\0';
+    free(ct); free(cs);
+
+    /* H1 gets an underline */
+    if (hlevel == 1 && cl > 0) {
+        int uw = indent + cl;
+        if (uw > screen_cols) uw = screen_cols;
+        PreviewLine *ul = pv_add(pb, source_row, uw);
+        pv_fill_acs(ul, 0, uw, PM_HLINE, A_BOLD, cpair);
+        ul->text[uw] = '\0';
+    }
+}
+
+static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
+                          int source_row)
+{
+    char *ct; CharStyle *cs; int cl;
+    strip_inline(line, len, 0, CP_DEFAULT, &ct, &cs, &cl);
+    PreviewLine *pl = pv_add(pb, source_row, cl);
+    pv_copy(pl, 0, ct, cs, cl);
+    pl->text[cl] = '\0';
+    free(ct); free(cs);
+}
+
+static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
+                      int source_row)
+{
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    int indent = i;
+    i++;                                       /* skip marker */
+    if (i < len && line[i] == ' ') i++;
+
+    char *ct; CharStyle *cs; int cl;
+    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl);
+
+    int total = indent + 2 + cl;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
+    pv_set_acs(pl, p, PM_BULLET, A_BOLD, CP_LIST_MARKER);
+    p++;
+    pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
+    p = pv_copy(pl, p, ct, cs, cl);
+    pl->len = p; pl->text[p] = '\0';
+    free(ct); free(cs);
+}
+
+static void gen_olist(PreviewBuffer *pb, const char *line, int len,
+                      int source_row)
+{
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    int indent = i;
+    int ns = i;
+    while (i < len && isdigit((unsigned char)line[i])) i++;
+    if (i < len && (line[i] == '.' || line[i] == ')')) i++;
+    if (i < len && line[i] == ' ') i++;
+    int prefix_len = i - ns;
+
+    char *ct; CharStyle *cs; int cl;
+    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl);
+
+    int total = indent + prefix_len + cl;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
+    for (int j = 0; j < prefix_len; j++) {
+        pl->text[p]         = line[ns + j];
+        pl->styles[p].attr  = A_BOLD;
+        pl->styles[p].cpair = CP_LIST_MARKER;
+        p++;
+    }
+    p = pv_copy(pl, p, ct, cs, cl);
+    pl->len = p; pl->text[p] = '\0';
+    free(ct); free(cs);
+}
+
+static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
+                           int source_row)
+{
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    int indent = i;
+    if (i < len && line[i] == '>') i++;
+    if (i < len && line[i] == ' ') i++;
+
+    char *ct; CharStyle *cs; int cl;
+    strip_inline(line + i, len - i, 0, CP_BLOCKQUOTE, &ct, &cs, &cl);
+
+    int total = indent + 2 + cl;
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
+    pv_set_acs(pl, p, PM_VLINE, A_BOLD, CP_BLOCKQUOTE);
+    p++;
+    pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
+    p = pv_copy(pl, p, ct, cs, cl);
+    pl->len = p; pl->text[p] = '\0';
+    free(ct); free(cs);
+}
+
+/* Generate a boxed code block.
+   fence_row  = row of the opening ``` line (used for language label).
+   content_start .. content_end-1 = rows of actual code content. */
+static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
+                           int fence_row, int content_start,
+                           int content_end, int screen_cols)
+{
+    /* Extract language label from opening fence */
+    char *fence = buffer_line_data(buf, fence_row);
+    int flen = buffer_line_len(buf, fence_row);
+    int fi = 0;
+    while (fi < flen && (fence[fi] == ' ' || fence[fi] == '`' || fence[fi] == '~')) fi++;
+    int lang_start = fi;
+    while (fi < flen && fence[fi] != ' ' && fence[fi] != '`' && fence[fi] != '~') fi++;
+    int lang_len = fi - lang_start;
+
+    /* Find max content width */
+    int max_w = 0;
+    for (int r = content_start; r < content_end; r++) {
+        int l = buffer_line_len(buf, r);
+        if (l > max_w) max_w = l;
+    }
+
+    /* Box internal width: at least lang_len+2 or 20, capped to screen */
+    int box_w = max_w;
+    if (lang_len + 2 > box_w) box_w = lang_len + 2;
+    if (box_w < 20) box_w = 20;
+    int max_box = screen_cols - 4;
+    if (max_box > 0 && box_w > max_box) box_w = max_box;
+
+    int total = box_w + 4;   /* │ + space + content + space + │ */
+
+    /* ── Top border: ┌─ language ──────┐ ── */
+    {
+        PreviewLine *pl = pv_add(pb, fence_row, total);
+        int p = 0;
+        pv_set_acs(pl, p, PM_ULCORNER, 0, CP_DIMMED); p++;
+        if (lang_len > 0) {
+            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
+            pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
+            for (int j = 0; j < lang_len && p < total - 1; j++) {
+                pl->text[p] = fence[lang_start + j];
+                pl->styles[p].attr  = A_BOLD;
+                pl->styles[p].cpair = CP_CODE_BLOCK;
+                p++;
+            }
+            pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
+        }
+        while (p < total - 1) {
+            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
+        }
+        pv_set_acs(pl, p, PM_URCORNER, 0, CP_DIMMED); p++;
+        pl->len = p; pl->text[p] = '\0';
+    }
+
+    /* ── Content lines: │ code padded │ ── */
+    for (int r = content_start; r < content_end; r++) {
+        char *line = buffer_line_data(buf, r);
+        int   len  = buffer_line_len(buf, r);
+        PreviewLine *pl = pv_add(pb, r, total);
+        int p = 0;
+        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+        pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
+        for (int j = 0; j < box_w; j++) {
+            pl->text[p]         = (j < len) ? line[j] : ' ';
+            pl->styles[p].cpair = CP_CODE_BLOCK;
+            p++;
+        }
+        pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
+        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+        pl->len = p; pl->text[p] = '\0';
+    }
+
+    /* If the code block is empty, add one blank content line */
+    if (content_start >= content_end) {
+        PreviewLine *pl = pv_add(pb, fence_row, total);
+        int p = 0;
+        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+        p = pv_fill(pl, p, box_w + 2, ' ', 0, CP_CODE_BLOCK);
+        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+        pl->len = p; pl->text[p] = '\0';
+    }
+
+    /* ── Bottom border: └──────────────┘ ── */
+    {
+        int src = (content_end > content_start) ? content_end - 1 : fence_row;
+        PreviewLine *pl = pv_add(pb, src, total);
+        int p = 0;
+        pv_set_acs(pl, p, PM_LLCORNER, 0, CP_DIMMED); p++;
+        while (p < total - 1) {
+            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
+        }
+        pv_set_acs(pl, p, PM_LRCORNER, 0, CP_DIMMED); p++;
+        pl->len = p; pl->text[p] = '\0';
+    }
+}
+
+static void gen_hrule(PreviewBuffer *pb, int source_row, int screen_cols)
+{
+    int w = (screen_cols > 0) ? screen_cols : 40;
+    PreviewLine *pl = pv_add(pb, source_row, w);
+    pv_fill_acs(pl, 0, w, PM_HLINE, A_DIM, CP_HRULE);
+    pl->text[w] = '\0';
+}
+
+static void gen_empty(PreviewBuffer *pb, int source_row)
+{
+    pv_add(pb, source_row, 0);
+}
+
+/* ================================================================
+ *  Table support
+ * ================================================================ */
+
+#define MAX_TBL_COLS 32
+
+typedef struct {
+    char *cells[MAX_TBL_COLS];
+    int   cell_lens[MAX_TBL_COLS];
+    int   num_cells;
+    int   is_sep;
+} TRow;
+
+static int is_table_line(const char *line, int len)
+{
+    int pipes = 0;
+    for (int i = 0; i < len; i++)
+        if (line[i] == '|') pipes++;
+    return pipes >= 1;
+}
+
+static void parse_table_row(const char *line, int len, TRow *row)
+{
+    memset(row, 0, sizeof(*row));
+    row->is_sep = 1;
+
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    if (i < len && line[i] == '|') i++;
+
+    while (i < len && row->num_cells < MAX_TBL_COLS) {
+        int cs = i;
+        while (i < len && line[i] != '|') i++;
+        int ce = i;
+
+        while (cs < ce && line[cs] == ' ') cs++;
+        while (ce > cs && line[ce - 1] == ' ') ce--;
+        int clen = (ce > cs) ? ce - cs : 0;
+
+        row->cells[row->num_cells]     = strndup(line + cs, clen);
+        row->cell_lens[row->num_cells] = clen;
+
+        int sep = (clen > 0);
+        for (int j = cs; j < ce; j++)
+            if (line[j] != '-' && line[j] != ':' && line[j] != ' ')
+                { sep = 0; break; }
+        if (clen == 0) sep = 0;
+        if (!sep) row->is_sep = 0;
+
+        row->num_cells++;
+        if (i < len && line[i] == '|') i++;
+        else break;
+    }
+    if (row->num_cells == 0) row->is_sep = 0;
+}
+
+static void free_trow(TRow *r)
+{
+    for (int c = 0; c < r->num_cells; c++) free(r->cells[c]);
+}
+
+/* kind: 0 = top  ┌─┬─┐   1 = mid  ├─┼─┤   2 = bot  └─┴─┘ */
+static void gen_table_border(PreviewBuffer *pb, int *cw, int ncols,
+                             int kind, int source_row)
+{
+    int total = 1;
+    for (int c = 0; c < ncols; c++) total += cw[c] + 2 + 1;
+
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = 0;
+    unsigned char lc, mc, rc;
+    switch (kind) {
+    case 0: lc = PM_ULCORNER; mc = PM_TTEE; rc = PM_URCORNER; break;
+    case 1: lc = PM_LTEE;     mc = PM_PLUS; rc = PM_RTEE;     break;
+    default:lc = PM_LLCORNER; mc = PM_BTEE; rc = PM_LRCORNER; break;
+    }
+
+    pv_set_acs(pl, p, lc, 0, CP_DIMMED); p++;
+    for (int c = 0; c < ncols; c++) {
+        p = pv_fill_acs(pl, p, cw[c] + 2, PM_HLINE, 0, CP_DIMMED);
+        unsigned char sep = (c < ncols - 1) ? mc : rc;
+        pv_set_acs(pl, p, sep, 0, CP_DIMMED); p++;
+    }
+    pl->len = p; pl->text[p] = '\0';
+}
+
+static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
+                              int ncols, int is_hdr, int source_row)
+{
+    int total = 1;
+    for (int c = 0; c < ncols; c++) total += cw[c] + 2 + 1;
+
+    PreviewLine *pl = pv_add(pb, source_row, total);
+    int p = 0;
+    attr_t ca = is_hdr ? A_BOLD : 0;
+    short  cc = is_hdr ? CP_HEADING2 : CP_DEFAULT;
+
+    pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+    for (int c = 0; c < ncols; c++) {
+        pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
+        int cl   = (c < row->num_cells) ? row->cell_lens[c] : 0;
+        const char *ct = (c < row->num_cells) ? row->cells[c] : "";
+        for (int j = 0; j < cw[c]; j++) {
+            pl->text[p]         = (j < cl) ? ct[j] : ' ';
+            pl->styles[p].attr  = ca;
+            pl->styles[p].cpair = cc;
+            p++;
+        }
+        pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
+        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
+    }
+    pl->len = p; pl->text[p] = '\0';
+}
+
+static void gen_table_block(PreviewBuffer *pb, Buffer *buf,
+                            int start, int end, int screen_cols)
+{
+    int nr = end - start;
+    TRow *rows = calloc(nr, sizeof(TRow));
+    int max_cols = 0;
+
+    for (int i = 0; i < nr; i++) {
+        parse_table_row(buffer_line_data(buf, start + i),
+                        buffer_line_len(buf, start + i), &rows[i]);
+        if (rows[i].num_cells > max_cols)
+            max_cols = rows[i].num_cells;
+    }
+
+    int cw[MAX_TBL_COLS];
+    memset(cw, 0, sizeof(cw));
+    for (int i = 0; i < nr; i++) {
+        if (rows[i].is_sep) continue;
+        for (int c = 0; c < rows[i].num_cells; c++)
+            if (rows[i].cell_lens[c] > cw[c])
+                cw[c] = rows[i].cell_lens[c];
+    }
+    for (int c = 0; c < max_cols; c++)
+        if (cw[c] < 3) cw[c] = 3;
+
+    (void)screen_cols;
+
+    gen_table_border(pb, cw, max_cols, 0, start);
+
+    int found_sep = 0;
+    for (int i = 0; i < nr; i++) {
+        if (rows[i].is_sep) {
+            gen_table_border(pb, cw, max_cols, 1, start + i);
+            found_sep = 1;
+        } else {
+            gen_table_content(pb, &rows[i], cw, max_cols,
+                              !found_sep, start + i);
+        }
+    }
+
+    gen_table_border(pb, cw, max_cols, 2, end - 1);
+
+    for (int i = 0; i < nr; i++) free_trow(&rows[i]);
+    free(rows);
+}
+
+/* ================================================================
+ *  Public preview API
+ * ================================================================ */
+
+void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
+{
+    preview_free(pb);
+
+    int in_code = 0;
+    int row = 0;
+
+    while (row < buf->num_lines) {
+        char     *line = buffer_line_data(buf, row);
+        int       len  = buffer_line_len(buf, row);
+        BlockType bt   = render_get_block_type(line, in_code);
+
+        if (bt == BLOCK_CODE_FENCE) {
+            int fence_open = row;
+            row++;                          /* skip opening fence */
+            int content_start = row;
+            int found_close = 0;
+            while (row < buf->num_lines) {
+                char *cl = buffer_line_data(buf, row);
+                if (render_is_code_fence(cl)) {
+                    found_close = 1;
+                    break;
+                }
+                row++;
+            }
+            int content_end = row;          /* exclusive */
+            gen_code_block(pb, buf, fence_open, content_start,
+                           content_end, screen_cols);
+            if (found_close) row++;         /* skip closing fence */
+            continue;
+        }
+
+        /* Detect table blocks (consecutive paragraph lines with |) */
+        if (bt == BLOCK_PARAGRAPH && is_table_line(line, len)) {
+            int ts = row;
+            while (row < buf->num_lines) {
+                char *tl  = buffer_line_data(buf, row);
+                int   tln = buffer_line_len(buf, row);
+                BlockType tbt = render_get_block_type(tl, in_code);
+                if (tbt != BLOCK_PARAGRAPH || !is_table_line(tl, tln))
+                    break;
+                row++;
+            }
+            gen_table_block(pb, buf, ts, row, screen_cols);
+            continue;
+        }
+
+        switch (bt) {
+        case BLOCK_HEADING:
+            gen_heading(pb, line, len, row, screen_cols); break;
+        case BLOCK_HRULE:
+            gen_hrule(pb, row, screen_cols); break;
+        case BLOCK_LIST_UNORDERED:
+            gen_ulist(pb, line, len, row); break;
+        case BLOCK_LIST_ORDERED:
+            gen_olist(pb, line, len, row); break;
+        case BLOCK_BLOCKQUOTE:
+            gen_blockquote(pb, line, len, row); break;
+        case BLOCK_CODE_CONTENT:
+            /* Shouldn't happen — code blocks are collected above.
+               Fall through to paragraph as a safety net. */
+            gen_paragraph(pb, line, len, row); break;
+        case BLOCK_EMPTY:
+            gen_empty(pb, row); break;
+        default:
+            gen_paragraph(pb, line, len, row); break;
+        }
+        row++;
+    }
+}
+
+void preview_free(PreviewBuffer *pb)
+{
+    for (int i = 0; i < pb->num_lines; i++) {
+        free(pb->lines[i].text);
+        free(pb->lines[i].styles);
+    }
+    free(pb->lines);
+    memset(pb, 0, sizeof(*pb));
+}
+
+void preview_draw_line(int screen_y, int screen_cols,
+                       PreviewLine *pl, int scroll_x)
+{
+    move(screen_y, 0);
+    clrtoeol();
+
+    int col = 0;
+    for (int i = scroll_x; i < pl->len && col < screen_cols; i++, col++) {
+        attr_t a = COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr;
+        if (pl->styles[i].acs) {
+            chtype acs;
+            switch (pl->styles[i].acs) {
+            case PM_VLINE:    acs = ACS_VLINE;    break;
+            case PM_HLINE:    acs = ACS_HLINE;    break;
+            case PM_ULCORNER: acs = ACS_ULCORNER; break;
+            case PM_URCORNER: acs = ACS_URCORNER; break;
+            case PM_LLCORNER: acs = ACS_LLCORNER; break;
+            case PM_LRCORNER: acs = ACS_LRCORNER; break;
+            case PM_LTEE:     acs = ACS_LTEE;     break;
+            case PM_RTEE:     acs = ACS_RTEE;     break;
+            case PM_TTEE:     acs = ACS_TTEE;     break;
+            case PM_BTEE:     acs = ACS_BTEE;     break;
+            case PM_PLUS:     acs = ACS_PLUS;     break;
+            case PM_BULLET:   acs = ACS_BULLET;   break;
+            default:          acs = '?';           break;
+            }
+            addch(acs | a);
+        } else {
+            addch((unsigned char)pl->text[i] | a);
+        }
+    }
+}
+
+int preview_find_line(PreviewBuffer *pb, int buffer_row)
+{
+    for (int i = 0; i < pb->num_lines; i++)
+        if (pb->lines[i].source_row >= buffer_row)
+            return i;
+    return (pb->num_lines > 0) ? pb->num_lines - 1 : 0;
+}
