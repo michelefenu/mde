@@ -11,6 +11,37 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 /* ================================================================
+ *  UTF-8 multi-byte input helper
+ * ================================================================ */
+
+/* Given the first byte returned by getch(), read any remaining
+   continuation bytes of a UTF-8 character.  Returns the total
+   number of bytes (1-4) stored in out[]. */
+static int read_utf8_seq(int first, char out[4])
+{
+    out[0] = (char)first;
+    unsigned char c = (unsigned char)first;
+
+    int expected;
+    if (c < 0x80)      expected = 1;
+    else if (c < 0xC0) expected = 1;   /* stray continuation byte */
+    else if (c < 0xE0) expected = 2;
+    else if (c < 0xF0) expected = 3;
+    else                expected = 4;
+
+    for (int i = 1; i < expected; i++) {
+        int next = getch();
+        if (next == ERR || (next & 0xC0) != 0x80) {
+            /* Not a valid continuation — push back and stop */
+            if (next != ERR) ungetch(next);
+            return i;
+        }
+        out[i] = (char)next;
+    }
+    return expected;
+}
+
+/* ================================================================
  *  Status message
  * ================================================================ */
 
@@ -67,9 +98,12 @@ static char *editor_prompt(Editor *ed, const char *prompt_str,
 
         if (c == KEY_BACKSPACE || c == 127 || c == CTRL_KEY('h')) {
             if (buflen > 0) buf[--buflen] = '\0';
-        } else if (c >= 32 && c < 127 && buflen < (int)sizeof(buf) - 1) {
-            buf[buflen++] = (char)c;
-            buf[buflen]   = '\0';
+        } else if (c >= 32 && c < 256 && buflen < (int)sizeof(buf) - 5) {
+            char utf8[4];
+            int  utf8_len = read_utf8_seq(c, utf8);
+            for (int i = 0; i < utf8_len && buflen < (int)sizeof(buf) - 1; i++)
+                buf[buflen++] = utf8[i];
+            buf[buflen] = '\0';
         }
 
         if (cb) cb(ed, buf, c);
@@ -718,10 +752,14 @@ static void editor_process_key(Editor *ed)
         ed->search_query_len = 0;
         break;
 
-    /* ── Printable character ── */
+    /* ── Printable character (including multi-byte UTF-8) ── */
     default:
-        if (c >= 32 && c < 127)
-            editor_insert_char(ed, c);
+        if (c >= 32 && c < 256) {
+            char utf8[4];
+            int  utf8_len = read_utf8_seq(c, utf8);
+            for (int i = 0; i < utf8_len; i++)
+                editor_insert_char(ed, (unsigned char)utf8[i]);
+        }
         break;
     }
 }
