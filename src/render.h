@@ -92,6 +92,9 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols);
 void preview_free(PreviewBuffer *pb);
 void preview_draw_line(int screen_y, int screen_cols,
                        PreviewLine *pl, int scroll_x);
+int  preview_wrap_height(PreviewLine *pl, int cols);
+int  preview_draw_line_wrapped(int screen_y, int screen_cols,
+                               PreviewLine *pl, int max_rows);
 int  preview_find_line(PreviewBuffer *pb, int buffer_row);
 
 #endif

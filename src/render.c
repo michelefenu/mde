@@ -1242,6 +1242,85 @@ void preview_draw_line(int screen_y, int screen_cols,
     }
 }
 
+/* Count display columns (characters) in a PreviewLine */
+static int preview_display_width(PreviewLine *pl)
+{
+    int col = 0;
+    int i = 0;
+    while (i < pl->len) {
+        if (pl->styles[i].acs) {
+            i++;
+        } else {
+            int clen = utf8_clen((unsigned char)pl->text[i]);
+            if (i + clen > pl->len) clen = pl->len - i;
+            i += clen;
+        }
+        col++;
+    }
+    return col;
+}
+
+int preview_wrap_height(PreviewLine *pl, int cols)
+{
+    if (cols <= 0) return 1;
+    int dw = preview_display_width(pl);
+    if (dw == 0) return 1;
+    return (dw + cols - 1) / cols;
+}
+
+int preview_draw_line_wrapped(int screen_y, int screen_cols,
+                              PreviewLine *pl, int max_rows)
+{
+    int row = 0;
+    int col = 0;
+    int i   = 0;
+
+    move(screen_y, 0);
+    clrtoeol();
+
+    while (i < pl->len && row < max_rows) {
+        if (col >= screen_cols) {
+            row++;
+            col = 0;
+            if (row >= max_rows) break;
+            move(screen_y + row, 0);
+            clrtoeol();
+        }
+
+        attr_t a = COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr;
+        if (pl->styles[i].acs) {
+            chtype acs;
+            switch (pl->styles[i].acs) {
+            case PM_VLINE:    acs = ACS_VLINE;    break;
+            case PM_HLINE:    acs = ACS_HLINE;    break;
+            case PM_ULCORNER: acs = ACS_ULCORNER; break;
+            case PM_URCORNER: acs = ACS_URCORNER; break;
+            case PM_LLCORNER: acs = ACS_LLCORNER; break;
+            case PM_LRCORNER: acs = ACS_LRCORNER; break;
+            case PM_LTEE:     acs = ACS_LTEE;     break;
+            case PM_RTEE:     acs = ACS_RTEE;     break;
+            case PM_TTEE:     acs = ACS_TTEE;     break;
+            case PM_BTEE:     acs = ACS_BTEE;     break;
+            case PM_PLUS:     acs = ACS_PLUS;     break;
+            case PM_BULLET:   acs = ACS_BULLET;   break;
+            default:          acs = '?';           break;
+            }
+            addch(acs | a);
+            i++;
+        } else {
+            int clen = utf8_clen((unsigned char)pl->text[i]);
+            if (i + clen > pl->len) clen = pl->len - i;
+            attron(a);
+            addnstr(pl->text + i, clen);
+            attroff(a);
+            i += clen;
+        }
+        col++;
+    }
+
+    return (row < max_rows) ? row + 1 : max_rows;
+}
+
 int preview_find_line(PreviewBuffer *pb, int buffer_row)
 {
     for (int i = 0; i < pb->num_lines; i++)

@@ -519,7 +519,14 @@ static void editor_toggle_preview(Editor *ed)
 
 static void clamp_preview_scroll(Editor *ed)
 {
-    int max_s = ed->preview_buf.num_lines - ed->screen_rows;
+    int max_s;
+    if (ed->word_wrap) {
+        /* With wrapping, each line may span multiple rows,
+           so allow scrolling further toward the end */
+        max_s = ed->preview_buf.num_lines - 1;
+    } else {
+        max_s = ed->preview_buf.num_lines - ed->screen_rows;
+    }
     if (max_s < 0) max_s = 0;
     if (ed->preview_scroll_y > max_s) ed->preview_scroll_y = max_s;
     if (ed->preview_scroll_y < 0)     ed->preview_scroll_y = 0;
@@ -536,6 +543,12 @@ static void editor_preview_process_key(Editor *ed, int c)
 
     case CTRL_KEY('q'):
         ed->quit = 1;
+        break;
+
+    case CTRL_KEY('w'):
+        ed->word_wrap = !ed->word_wrap;
+        clamp_preview_scroll(ed);
+        editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
         break;
 
     case KEY_UP:
@@ -683,14 +696,32 @@ static void editor_draw_rows(Editor *ed)
 
 static void editor_draw_preview_rows(Editor *ed)
 {
-    for (int y = 0; y < ed->screen_rows; y++) {
-        int prow = ed->preview_scroll_y + y;
-        if (prow < ed->preview_buf.num_lines) {
-            preview_draw_line(y, ed->screen_cols,
-                              &ed->preview_buf.lines[prow], 0);
-        } else {
+    if (ed->word_wrap) {
+        int y = 0;
+        int prow = ed->preview_scroll_y;
+        while (y < ed->screen_rows && prow < ed->preview_buf.num_lines) {
+            int remaining = ed->screen_rows - y;
+            int used = preview_draw_line_wrapped(y, ed->screen_cols,
+                                                 &ed->preview_buf.lines[prow],
+                                                 remaining);
+            y += used;
+            prow++;
+        }
+        while (y < ed->screen_rows) {
             move(y, 0);
             clrtoeol();
+            y++;
+        }
+    } else {
+        for (int y = 0; y < ed->screen_rows; y++) {
+            int prow = ed->preview_scroll_y + y;
+            if (prow < ed->preview_buf.num_lines) {
+                preview_draw_line(y, ed->screen_cols,
+                                  &ed->preview_buf.lines[prow], 0);
+            } else {
+                move(y, 0);
+                clrtoeol();
+            }
         }
     }
 }
@@ -752,7 +783,7 @@ static void editor_draw_statusbar(Editor *ed)
         const char *help;
         if (ed->preview_mode)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
-                   "q/Esc/Ctrl+P Edit mode | Ctrl+Q Quit";
+                   "Ctrl+W Wrap | q/Esc/Ctrl+P Edit | Ctrl+Q Quit";
         else
             help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+F Search | "
                    "Ctrl+N Next | Ctrl+G Goto | Ctrl+P Preview | Ctrl+W Wrap";
