@@ -1,24 +1,24 @@
-# tmde — Terminal Markdown Editor
+# tmde 
 
-A minimal, terminal-based markdown editor written in C that provides WYSIWYG-like
-rendering of markdown formatting directly in the terminal using ncurses.
+A minimal, terminal-based markdown editor that provides WYSIWYG-like
+rendering of markdown formatting directly in the terminal.
 
 ![C](https://img.shields.io/badge/language-C99-blue)
 
 ## Features
 
-- **Live markdown rendering** — headings, bold, italic, strikethrough, inline code,
+- **Live markdown rendering**: headings, bold, italic, strikethrough, inline code,
   links, lists, blockquotes, code blocks, and horizontal rules are styled in real time
-- **Preview mode** — Ctrl+P toggles a read-only rendered view with hidden syntax
+- **Preview mode**: Ctrl+P toggles a read-only rendered view with hidden syntax
   markers, man-page-style heading indentation, and box-drawing table borders
-- **Word wrap** — Ctrl+W toggles character-level wrapping at the screen edge in both
+- **Word wrap**: Ctrl+W toggles character-level wrapping at the screen edge in both
   edit and preview mode; status bar shows "wrap" when enabled
-- **Syntax markers dimmed** — in edit mode, markdown delimiters (`#`, `*`, `` ` ``, etc.)
+- **Syntax markers dimmed**: in edit mode, markdown delimiters (`#`, `*`, `` ` ``, etc.)
   are shown in a muted colour so the content stands out
-- **Incremental search** — Ctrl+F with live highlighting, Ctrl+N for next match
-- **Status bar** — filename, cursor position, line count, and unsaved-change indicator
-- **Modeless editing** — always in edit mode, commands via Ctrl+key combinations
-- **Saves raw markdown** — files are saved as standard `.md`, never rendered output
+- **Incremental search**: Ctrl+F with live highlighting, Ctrl+N for next match
+- **Status bar**: filename, cursor position, line count, and unsaved-change indicator
+- **Modeless editing**: always in edit mode, commands via Ctrl+key combinations
+- **Saves raw markdown**: files are saved as standard `.md`, never rendered output
 
 ## Requirements
 
