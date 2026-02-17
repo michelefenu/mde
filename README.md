@@ -11,6 +11,8 @@ rendering of markdown formatting directly in the terminal using ncurses.
   links, lists, blockquotes, code blocks, and horizontal rules are styled in real time
 - **Preview mode** — Ctrl+P toggles a read-only rendered view with hidden syntax
   markers, man-page-style heading indentation, and box-drawing table borders
+- **Word wrap** — Ctrl+W toggles character-level wrapping at the screen edge in both
+  edit and preview mode; status bar shows "wrap" when enabled
 - **Syntax markers dimmed** — in edit mode, markdown delimiters (`#`, `*`, `` ` ``, etc.)
   are shown in a muted colour so the content stands out
 - **Incremental search** — Ctrl+F with live highlighting, Ctrl+N for next match
@@ -57,6 +59,7 @@ This produces the `tmde` binary in the project root.
 | Ctrl+S        | Save (prompts for name if new)  |
 | Ctrl+Q        | Quit (confirm if unsaved)       |
 | Ctrl+P        | Switch to preview mode          |
+| Ctrl+W        | Toggle word wrap                |
 | Ctrl+F        | Incremental search              |
 | Ctrl+N        | Find next search match          |
 | Ctrl+G        | Go to line number               |
@@ -74,6 +77,7 @@ This produces the `tmde` binary in the project root.
 | Key               | Action                          |
 |-------------------|---------------------------------|
 | Ctrl+P / q / Esc  | Return to edit mode             |
+| Ctrl+W            | Toggle word wrap                |
 | j / k / Arrows    | Scroll up / down                |
 | Space / Page Down | Scroll down by page             |
 | Page Up           | Scroll up by page               |
