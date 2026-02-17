@@ -219,10 +219,16 @@ static void editor_scroll(Editor *ed)
 
             if (vis_y >= ed->screen_rows) {
                 ed->scroll_y++;
+                if (ed->scroll_y >= ed->buf.num_lines) {
+                    ed->scroll_y = ed->buf.num_lines > 0 ? ed->buf.num_lines - 1 : 0;
+                    break;
+                }
             } else {
                 break;
             }
         }
+        if (ed->scroll_y >= ed->buf.num_lines)
+            ed->scroll_y = ed->buf.num_lines > 0 ? ed->buf.num_lines - 1 : 0;
     } else {
         if (ed->cy < ed->scroll_y)
             ed->scroll_y = ed->cy;
@@ -517,17 +523,29 @@ static void editor_toggle_preview(Editor *ed)
     }
 }
 
+/* Max preview scroll position (used for clamping and percentage). */
+static int preview_max_scroll(Editor *ed)
+{
+    if (ed->word_wrap) {
+        int n = ed->preview_buf.num_lines;
+        if (n == 0) return 0;
+        int total = 0;
+        int first = n - 1;
+        for (int i = n - 1; i >= 0; i--) {
+            total += preview_wrap_height(&ed->preview_buf.lines[i],
+                                         ed->screen_cols);
+            first = i;
+            if (total >= ed->screen_rows) break;
+        }
+        return first;
+    }
+    int max_s = ed->preview_buf.num_lines - ed->screen_rows;
+    return max_s > 0 ? max_s : 0;
+}
+
 static void clamp_preview_scroll(Editor *ed)
 {
-    int max_s;
-    if (ed->word_wrap) {
-        /* With wrapping, each line may span multiple rows,
-           so allow scrolling further toward the end */
-        max_s = ed->preview_buf.num_lines - 1;
-    } else {
-        max_s = ed->preview_buf.num_lines - ed->screen_rows;
-    }
-    if (max_s < 0) max_s = 0;
+    int max_s = preview_max_scroll(ed);
     if (ed->preview_scroll_y > max_s) ed->preview_scroll_y = max_s;
     if (ed->preview_scroll_y < 0)     ed->preview_scroll_y = 0;
 }
@@ -741,7 +759,8 @@ static void editor_draw_statusbar(Editor *ed)
                         ed->filename ? ed->filename : "[New File]");
         int cur = ed->preview_scroll_y + 1;
         int tot = ed->preview_buf.num_lines;
-        int pct = tot > 0 ? cur * 100 / tot : 100;
+        int max_s = preview_max_scroll(ed);
+        int pct = (max_s > 0) ? (ed->preview_scroll_y * 100 / max_s) : 100;
         rlen = snprintf(right, sizeof(right), "%d%% (%d/%d) ",
                         pct, cur, tot);
     } else {
