@@ -502,6 +502,60 @@ void render_draw_line(int screen_y, int screen_cols,
 }
 
 /* ================================================================
+ *  Word-wrap helpers
+ * ================================================================ */
+
+int render_wrap_height(const char *text, int len, int cols)
+{
+    if (cols <= 0) return 1;
+    int dw = render_byte_to_col(text, len, len);
+    if (dw == 0) return 1;
+    return (dw + cols - 1) / cols;
+}
+
+int render_draw_line_wrapped(int screen_y, int screen_cols,
+                             const char *text, int len,
+                             BlockType btype, int hlevel,
+                             int max_rows)
+{
+    CharStyle *styles = calloc(len + 1, sizeof(CharStyle));
+    compute_styles(text, len, styles, btype, hlevel);
+
+    int row = 0;      /* current wrapped sub-row */
+    int col = 0;      /* current column within sub-row */
+    int i   = 0;      /* byte offset into text */
+
+    move(screen_y, 0);
+    clrtoeol();
+
+    while (i < len && row < max_rows) {
+        attr_t a = COLOR_PAIR(styles[i].cpair) | styles[i].attr;
+        int clen = utf8_clen((unsigned char)text[i]);
+        if (i + clen > len) clen = len - i;
+
+        /* If this character would exceed the screen width, wrap */
+        if (col >= screen_cols) {
+            row++;
+            col = 0;
+            if (row >= max_rows) break;
+            move(screen_y + row, 0);
+            clrtoeol();
+        }
+
+        attron(a);
+        addnstr(text + i, clen);
+        attroff(a);
+
+        i += clen;
+        col++;
+    }
+
+    /* If nothing was drawn (empty line), we still used 1 row */
+    free(styles);
+    return (row < max_rows) ? row + 1 : max_rows;
+}
+
+/* ================================================================
  *  Preview mode — inline markdown stripping
  * ================================================================ */
 

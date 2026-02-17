@@ -191,15 +191,49 @@ static char *editor_prompt(Editor *ed, const char *prompt_str,
 
 static void editor_scroll(Editor *ed)
 {
-    if (ed->cy < ed->scroll_y)
-        ed->scroll_y = ed->cy;
-    if (ed->cy >= ed->scroll_y + ed->screen_rows)
-        ed->scroll_y = ed->cy - ed->screen_rows + 1;
+    if (ed->word_wrap) {
+        /* Wrapping replaces horizontal scrolling */
+        ed->scroll_x = 0;
 
-    if (ed->cx < ed->scroll_x)
-        ed->scroll_x = ed->cx;
-    if (ed->cx >= ed->scroll_x + ed->screen_cols)
-        ed->scroll_x = ed->cx - ed->screen_cols + 1;
+        /* Ensure cursor line is above the viewport start */
+        if (ed->cy < ed->scroll_y)
+            ed->scroll_y = ed->cy;
+
+        /* Compute visual row of the cursor relative to scroll_y.
+           Sum wrap heights of lines from scroll_y to cy-1,
+           then add the cursor's sub-line within cy. */
+        for (;;) {
+            int vis_y = 0;
+            for (int r = ed->scroll_y; r < ed->cy; r++) {
+                vis_y += render_wrap_height(
+                    buffer_line_data(&ed->buf, r),
+                    buffer_line_len(&ed->buf, r),
+                    ed->screen_cols);
+            }
+            /* Add cursor's sub-line within its own line */
+            const char *cl = buffer_line_data(&ed->buf, ed->cy);
+            int cl_len = buffer_line_len(&ed->buf, ed->cy);
+            int cx_col = render_byte_to_col(cl, cl_len, ed->cx);
+            int sub = (ed->screen_cols > 0) ? cx_col / ed->screen_cols : 0;
+            vis_y += sub;
+
+            if (vis_y >= ed->screen_rows) {
+                ed->scroll_y++;
+            } else {
+                break;
+            }
+        }
+    } else {
+        if (ed->cy < ed->scroll_y)
+            ed->scroll_y = ed->cy;
+        if (ed->cy >= ed->scroll_y + ed->screen_rows)
+            ed->scroll_y = ed->cy - ed->screen_rows + 1;
+
+        if (ed->cx < ed->scroll_x)
+            ed->scroll_x = ed->cx;
+        if (ed->cx >= ed->scroll_x + ed->screen_cols)
+            ed->scroll_x = ed->cx - ed->screen_cols + 1;
+    }
 }
 
 /* ================================================================
@@ -572,10 +606,11 @@ static void editor_draw_rows(Editor *ed)
             in_code = !in_code;
     }
 
-    for (int y = 0; y < ed->screen_rows; y++) {
-        int frow = ed->scroll_y + y;
-
-        if (frow < ed->buf.num_lines) {
+    if (ed->word_wrap) {
+        /* ── Wrapped mode: one buffer line may span multiple screen rows ── */
+        int y = 0;
+        int frow = ed->scroll_y;
+        while (y < ed->screen_rows && frow < ed->buf.num_lines) {
             char     *line = buffer_line_data(&ed->buf, frow);
             int       len  = buffer_line_len(&ed->buf, frow);
             BlockType bt   = render_get_block_type(line, in_code);
@@ -584,33 +619,64 @@ static void editor_draw_rows(Editor *ed)
 
             if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
 
-            render_draw_line(y, ed->screen_cols, line, len,
-                             ed->scroll_x, bt, hl);
-
-            /* Overlay search highlights */
-            if (ed->search_query_len > 0) {
-                char *p = line;
-                while ((p = strstr(p, ed->search_query)) != NULL) {
-                    int mc = (int)(p - line);
-                    for (int x = mc; x < mc + ed->search_query_len; x++) {
-                        int sx = x - ed->scroll_x;
-                        if (sx >= 0 && sx < ed->screen_cols && x < len) {
-                            move(y, sx);
-                            attron(COLOR_PAIR(CP_SEARCH_HL) | A_BOLD);
-                            addch((unsigned char)line[x]);
-                            attroff(COLOR_PAIR(CP_SEARCH_HL) | A_BOLD);
-                        }
-                    }
-                    p++;
-                }
-            }
-        } else {
-            /* Past end of file */
+            int remaining = ed->screen_rows - y;
+            int used = render_draw_line_wrapped(y, ed->screen_cols,
+                                                line, len, bt, hl,
+                                                remaining);
+            y += used;
+            frow++;
+        }
+        /* Fill remaining rows with ~ */
+        while (y < ed->screen_rows) {
             move(y, 0);
             clrtoeol();
             attron(COLOR_PAIR(CP_DIMMED) | A_DIM);
             addch('~');
             attroff(COLOR_PAIR(CP_DIMMED) | A_DIM);
+            y++;
+        }
+    } else {
+        /* ── Non-wrapped mode: one buffer line per screen row ── */
+        for (int y = 0; y < ed->screen_rows; y++) {
+            int frow = ed->scroll_y + y;
+
+            if (frow < ed->buf.num_lines) {
+                char     *line = buffer_line_data(&ed->buf, frow);
+                int       len  = buffer_line_len(&ed->buf, frow);
+                BlockType bt   = render_get_block_type(line, in_code);
+                int       hl   = (bt == BLOCK_HEADING)
+                                 ? render_heading_level(line) : 0;
+
+                if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
+
+                render_draw_line(y, ed->screen_cols, line, len,
+                                 ed->scroll_x, bt, hl);
+
+                /* Overlay search highlights */
+                if (ed->search_query_len > 0) {
+                    char *p = line;
+                    while ((p = strstr(p, ed->search_query)) != NULL) {
+                        int mc = (int)(p - line);
+                        for (int x = mc; x < mc + ed->search_query_len; x++) {
+                            int sx = x - ed->scroll_x;
+                            if (sx >= 0 && sx < ed->screen_cols && x < len) {
+                                move(y, sx);
+                                attron(COLOR_PAIR(CP_SEARCH_HL) | A_BOLD);
+                                addch((unsigned char)line[x]);
+                                attroff(COLOR_PAIR(CP_SEARCH_HL) | A_BOLD);
+                            }
+                        }
+                        p++;
+                    }
+                }
+            } else {
+                /* Past end of file */
+                move(y, 0);
+                clrtoeol();
+                attron(COLOR_PAIR(CP_DIMMED) | A_DIM);
+                addch('~');
+                attroff(COLOR_PAIR(CP_DIMMED) | A_DIM);
+            }
         }
     }
 }
@@ -651,8 +717,9 @@ static void editor_draw_statusbar(Editor *ed)
         llen = snprintf(left, sizeof(left), " %s%s",
                         ed->filename ? ed->filename : "[New File]",
                         ed->dirty ? " [+]" : "");
-        rlen = snprintf(right, sizeof(right), "Ln %d, Col %d  %d lines ",
-                        ed->cy + 1, ed->cx + 1, ed->buf.num_lines);
+        rlen = snprintf(right, sizeof(right), "Ln %d, Col %d  %d lines%s ",
+                        ed->cy + 1, ed->cx + 1, ed->buf.num_lines,
+                        ed->word_wrap ? "  wrap" : "");
     }
     if (llen < 0) llen = 0;
     if (rlen < 0) rlen = 0;
@@ -688,7 +755,7 @@ static void editor_draw_statusbar(Editor *ed)
                    "q/Esc/Ctrl+P Edit mode | Ctrl+Q Quit";
         else
             help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+F Search | "
-                   "Ctrl+N Next | Ctrl+G Go to line | Ctrl+P Preview";
+                   "Ctrl+N Next | Ctrl+G Goto | Ctrl+P Preview | Ctrl+W Wrap";
         attron(A_DIM);
         int hl = (int)strlen(help);
         if (hl > ed->screen_cols) hl = ed->screen_cols;
@@ -717,6 +784,22 @@ static void editor_refresh_screen(Editor *ed)
     if (ed->preview_mode) {
         /* Hide cursor in preview */
         move(ed->screen_rows, 0);
+    } else if (ed->word_wrap) {
+        /* Place cursor accounting for wrapped lines */
+        const char *line = buffer_line_data(&ed->buf, ed->cy);
+        int line_len = buffer_line_len(&ed->buf, ed->cy);
+        int cx_col = render_byte_to_col(line, line_len, ed->cx);
+        int wrap_row = (ed->screen_cols > 0) ? cx_col / ed->screen_cols : 0;
+        int wrap_col = (ed->screen_cols > 0) ? cx_col % ed->screen_cols : 0;
+
+        int vis_y = 0;
+        for (int r = ed->scroll_y; r < ed->cy; r++)
+            vis_y += render_wrap_height(
+                buffer_line_data(&ed->buf, r),
+                buffer_line_len(&ed->buf, r),
+                ed->screen_cols);
+        vis_y += wrap_row;
+        move(vis_y, wrap_col);
     } else {
         /* Place the visible cursor (convert byte offsets to columns) */
         const char *line = buffer_line_data(&ed->buf, ed->cy);
@@ -785,6 +868,13 @@ static void editor_process_key(Editor *ed)
     /* ── Preview ── */
     case CTRL_KEY('p'):
         editor_toggle_preview(ed);
+        break;
+
+    /* ── Word wrap toggle ── */
+    case CTRL_KEY('w'):
+        ed->word_wrap = !ed->word_wrap;
+        if (ed->word_wrap) ed->scroll_x = 0;
+        editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
         break;
 
     /* ── Delete to end of line ── */

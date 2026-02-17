@@ -32,6 +32,8 @@ typedef struct {
     int           preview_mode;
     PreviewBuffer preview_buf;
     int           preview_scroll_y;
+    /* Word wrap */
+    int    word_wrap;            /* 0 = off (horizontal scroll), 1 = on */
 } Editor;
 
 void editor_init(Editor *ed);
