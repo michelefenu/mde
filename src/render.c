@@ -3,6 +3,31 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Byte length of a UTF-8 character from its lead byte. */
+static int utf8_clen(unsigned char c)
+{
+    if (c < 0x80)  return 1;
+    if (c < 0xC0)  return 1;   /* stray continuation byte */
+    if (c < 0xE0)  return 2;
+    if (c < 0xF0)  return 3;
+    return 4;
+}
+
+/* Convert a byte offset to a display column offset.
+   Both text and byte_pos are in raw bytes. */
+int render_byte_to_col(const char *text, int len, int byte_pos)
+{
+    int col = 0;
+    int i = 0;
+    while (i < byte_pos && i < len) {
+        int clen = utf8_clen((unsigned char)text[i]);
+        if (i + clen > len) clen = len - i;
+        i += clen;
+        col++;
+    }
+    return col;
+}
+
 /* Attribute used for dimmed / syntax marker characters.
    Updated at init time based on terminal colour depth. */
 static attr_t g_dim_attr = A_DIM;
@@ -459,11 +484,18 @@ void render_draw_line(int screen_y, int screen_cols,
     clrtoeol();
 
     int col = 0;
-    for (int i = scroll_x; i < len && col < screen_cols; i++, col++) {
+    int i = scroll_x;
+    while (i < len && col < screen_cols) {
         attr_t a = COLOR_PAIR(styles[i].cpair) | styles[i].attr;
+        int clen = utf8_clen((unsigned char)text[i]);
+        if (i + clen > len) clen = len - i;
+
         attron(a);
-        addch((unsigned char)text[i]);
+        addnstr(text + i, clen);
         attroff(a);
+
+        i += clen;
+        col++;
     }
 
     free(styles);
@@ -1122,7 +1154,8 @@ void preview_draw_line(int screen_y, int screen_cols,
     clrtoeol();
 
     int col = 0;
-    for (int i = scroll_x; i < pl->len && col < screen_cols; i++, col++) {
+    int i = scroll_x;
+    while (i < pl->len && col < screen_cols) {
         attr_t a = COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr;
         if (pl->styles[i].acs) {
             chtype acs;
@@ -1142,9 +1175,16 @@ void preview_draw_line(int screen_y, int screen_cols,
             default:          acs = '?';           break;
             }
             addch(acs | a);
+            i++;
         } else {
-            addch((unsigned char)pl->text[i] | a);
+            int clen = utf8_clen((unsigned char)pl->text[i]);
+            if (i + clen > pl->len) clen = pl->len - i;
+            attron(a);
+            addnstr(pl->text + i, clen);
+            attroff(a);
+            i += clen;
         }
+        col++;
     }
 }
 

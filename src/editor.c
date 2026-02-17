@@ -7,38 +7,110 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <ctype.h>
+#include <wchar.h>
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+/* Sentinel returned by editor_read_key() for non-ASCII characters.
+   The actual UTF-8 bytes are in the output buffer. */
+#define KEY_UTF8 (-2)
+
 /* ================================================================
- *  UTF-8 multi-byte input helper
+ *  UTF-8 helpers
  * ================================================================ */
 
-/* Given the first byte returned by getch(), read any remaining
-   continuation bytes of a UTF-8 character.  Returns the total
-   number of bytes (1-4) stored in out[]. */
-static int read_utf8_seq(int first, char out[4])
+/* Encode a Unicode codepoint as UTF-8.  Returns byte count (1-4). */
+static int wchar_to_utf8(unsigned long wc, char out[4])
 {
-    out[0] = (char)first;
-    unsigned char c = (unsigned char)first;
+    if (wc < 0x80) {
+        out[0] = (char)wc;
+        return 1;
+    }
+    if (wc < 0x800) {
+        out[0] = (char)(0xC0 | (wc >> 6));
+        out[1] = (char)(0x80 | (wc & 0x3F));
+        return 2;
+    }
+    if (wc < 0x10000) {
+        out[0] = (char)(0xE0 | (wc >> 12));
+        out[1] = (char)(0x80 | ((wc >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (wc & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (wc >> 18));
+    out[1] = (char)(0x80 | ((wc >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((wc >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (wc & 0x3F));
+    return 4;
+}
 
-    int expected;
-    if (c < 0x80)      expected = 1;
-    else if (c < 0xC0) expected = 1;   /* stray continuation byte */
-    else if (c < 0xE0) expected = 2;
-    else if (c < 0xF0) expected = 3;
-    else                expected = 4;
+/* Byte length of the UTF-8 character at text[pos]. */
+static int utf8_char_bytes(const char *text, int len, int pos)
+{
+    if (pos >= len) return 0;
+    unsigned char c = (unsigned char)text[pos];
+    int n = 1;
+    if      (c >= 0xF0) n = 4;
+    else if (c >= 0xE0) n = 3;
+    else if (c >= 0xC0) n = 2;
+    if (pos + n > len) n = len - pos;
+    return n;
+}
 
+/* Byte offset of the start of the UTF-8 character before byte_pos.
+   Walks backwards over continuation bytes (10xxxxxx). */
+static int utf8_prev_char(const char *text, int byte_pos)
+{
+    if (byte_pos <= 0) return 0;
+    byte_pos--;
+    while (byte_pos > 0 && ((unsigned char)text[byte_pos] & 0xC0) == 0x80)
+        byte_pos--;
+    return byte_pos;
+}
+
+/* ================================================================
+ *  Portable key reading  (uses get_wch on wide ncurses, getch otherwise)
+ * ================================================================ */
+
+/* Read one key event.
+   - ASCII chars and KEY_* constants are returned directly.
+   - Non-ASCII Unicode characters: fills utf8_buf, sets *utf8_len,
+     and returns KEY_UTF8 as a sentinel. */
+static int editor_read_key(char utf8_buf[4], int *utf8_len)
+{
+    *utf8_len = 0;
+
+#if NCURSES_WIDECHAR
+    wint_t wc;
+    int ret = get_wch(&wc);
+    if (ret == ERR) return ERR;
+    if (ret == KEY_CODE_YES) return (int)wc;   /* function key */
+    if ((int)wc < 0x80) return (int)wc;        /* ASCII */
+    /* Non-ASCII: encode as UTF-8 */
+    *utf8_len = wchar_to_utf8((unsigned long)wc, utf8_buf);
+    return KEY_UTF8;
+#else
+    int c = getch();
+    if (c == ERR || c < 0x80 || c >= 0x100) return c;
+    /* Raw high byte — assemble UTF-8 sequence */
+    utf8_buf[0] = (char)c;
+    unsigned char uc = (unsigned char)c;
+    int expected = 1;
+    if      (uc >= 0xF0) expected = 4;
+    else if (uc >= 0xE0) expected = 3;
+    else if (uc >= 0xC0) expected = 2;
     for (int i = 1; i < expected; i++) {
         int next = getch();
         if (next == ERR || (next & 0xC0) != 0x80) {
-            /* Not a valid continuation — push back and stop */
             if (next != ERR) ungetch(next);
-            return i;
+            *utf8_len = i;
+            return KEY_UTF8;
         }
-        out[i] = (char)next;
+        utf8_buf[i] = (char)next;
     }
-    return expected;
+    *utf8_len = expected;
+    return KEY_UTF8;
+#endif
 }
 
 /* ================================================================
@@ -73,7 +145,9 @@ static char *editor_prompt(Editor *ed, const char *prompt_str,
         editor_set_status(ed, "%s%s", prompt_str, buf);
         editor_refresh_screen(ed);
 
-        int c = getch();
+        char utf8[4];
+        int  utf8_len;
+        int  c = editor_read_key(utf8, &utf8_len);
 
         if (c == KEY_RESIZE) {
             getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
@@ -98,12 +172,13 @@ static char *editor_prompt(Editor *ed, const char *prompt_str,
 
         if (c == KEY_BACKSPACE || c == 127 || c == CTRL_KEY('h')) {
             if (buflen > 0) buf[--buflen] = '\0';
-        } else if (c >= 32 && c < 256 && buflen < (int)sizeof(buf) - 5) {
-            char utf8[4];
-            int  utf8_len = read_utf8_seq(c, utf8);
+        } else if (c == KEY_UTF8 && buflen < (int)sizeof(buf) - 5) {
             for (int i = 0; i < utf8_len && buflen < (int)sizeof(buf) - 1; i++)
                 buf[buflen++] = utf8[i];
             buf[buflen] = '\0';
+        } else if (c >= 32 && c < 127 && buflen < (int)sizeof(buf) - 1) {
+            buf[buflen++] = (char)c;
+            buf[buflen]   = '\0';
         }
 
         if (cb) cb(ed, buf, c);
@@ -135,19 +210,24 @@ static void editor_move_cursor(Editor *ed, int key)
 {
     switch (key) {
     case KEY_LEFT:
-        if (ed->cx > 0)
-            ed->cx--;
-        else if (ed->cy > 0) {
+        if (ed->cx > 0) {
+            const char *line = buffer_line_data(&ed->buf, ed->cy);
+            ed->cx = utf8_prev_char(line, ed->cx);
+        } else if (ed->cy > 0) {
             ed->cy--;
             ed->cx = buffer_line_len(&ed->buf, ed->cy);
         }
         break;
     case KEY_RIGHT:
-        if (ed->cx < buffer_line_len(&ed->buf, ed->cy))
-            ed->cx++;
-        else if (ed->cy < ed->buf.num_lines - 1) {
-            ed->cy++;
-            ed->cx = 0;
+        {
+            int ll = buffer_line_len(&ed->buf, ed->cy);
+            if (ed->cx < ll) {
+                const char *line = buffer_line_data(&ed->buf, ed->cy);
+                ed->cx += utf8_char_bytes(line, ll, ed->cx);
+            } else if (ed->cy < ed->buf.num_lines - 1) {
+                ed->cy++;
+                ed->cx = 0;
+            }
         }
         break;
     case KEY_UP:
@@ -201,8 +281,12 @@ static void editor_delete_backward(Editor *ed)
     if (ed->cx == 0 && ed->cy == 0) return;
 
     if (ed->cx > 0) {
-        buffer_delete_char(&ed->buf, ed->cy, ed->cx);
-        ed->cx--;
+        const char *line = buffer_line_data(&ed->buf, ed->cy);
+        int prev = utf8_prev_char(line, ed->cx);
+        int count = ed->cx - prev;
+        for (int i = 0; i < count; i++)
+            buffer_delete_forward(&ed->buf, ed->cy, prev);
+        ed->cx = prev;
     } else {
         int prev_len = buffer_line_len(&ed->buf, ed->cy - 1);
         buffer_delete_char(&ed->buf, ed->cy, 0);
@@ -217,7 +301,14 @@ static void editor_delete_forward(Editor *ed)
     int ll = buffer_line_len(&ed->buf, ed->cy);
     if (ed->cx >= ll && ed->cy >= ed->buf.num_lines - 1) return;
 
-    buffer_delete_forward(&ed->buf, ed->cy, ed->cx);
+    if (ed->cx < ll) {
+        const char *line = buffer_line_data(&ed->buf, ed->cy);
+        int count = utf8_char_bytes(line, ll, ed->cx);
+        for (int i = 0; i < count; i++)
+            buffer_delete_forward(&ed->buf, ed->cy, ed->cx);
+    } else {
+        buffer_delete_forward(&ed->buf, ed->cy, ed->cx);
+    }
     ed->dirty++;
 }
 
@@ -627,9 +718,12 @@ static void editor_refresh_screen(Editor *ed)
         /* Hide cursor in preview */
         move(ed->screen_rows, 0);
     } else {
-        /* Place the visible cursor */
+        /* Place the visible cursor (convert byte offsets to columns) */
+        const char *line = buffer_line_data(&ed->buf, ed->cy);
+        int line_len = buffer_line_len(&ed->buf, ed->cy);
         int vis_y = ed->cy - ed->scroll_y;
-        int vis_x = ed->cx - ed->scroll_x;
+        int vis_x = render_byte_to_col(line, line_len, ed->cx)
+                  - render_byte_to_col(line, line_len, ed->scroll_x);
         move(vis_y, vis_x);
     }
 
@@ -642,7 +736,9 @@ static void editor_refresh_screen(Editor *ed)
 
 static void editor_process_key(Editor *ed)
 {
-    int c = getch();
+    char utf8[4];
+    int  utf8_len;
+    int  c = editor_read_key(utf8, &utf8_len);
 
     /* Preview mode has its own key handler */
     if (ed->preview_mode) {
@@ -752,14 +848,16 @@ static void editor_process_key(Editor *ed)
         ed->search_query_len = 0;
         break;
 
-    /* ── Printable character (including multi-byte UTF-8) ── */
+    /* ── Non-ASCII character (from editor_read_key) ── */
+    case KEY_UTF8:
+        for (int i = 0; i < utf8_len; i++)
+            editor_insert_char(ed, (unsigned char)utf8[i]);
+        break;
+
+    /* ── ASCII printable character ── */
     default:
-        if (c >= 32 && c < 256) {
-            char utf8[4];
-            int  utf8_len = read_utf8_seq(c, utf8);
-            for (int i = 0; i < utf8_len; i++)
-                editor_insert_char(ed, (unsigned char)utf8[i]);
-        }
+        if (c >= 32 && c < 127)
+            editor_insert_char(ed, c);
         break;
     }
 }

@@ -1,6 +1,7 @@
 CC      ?= cc
-CFLAGS   = -Wall -Wextra -std=gnu99 -O2
-LDFLAGS  = -lncurses
+CFLAGS   = -Wall -Wextra -std=gnu99 -O2 -D_XOPEN_SOURCE_EXTENDED
+LDFLAGS  = $(shell pkg-config --libs ncursesw 2>/dev/null || echo "-lncurses")
+CFLAGS  += $(shell pkg-config --cflags ncursesw 2>/dev/null)
 
 SRCDIR   = src
 BUILDDIR = build
