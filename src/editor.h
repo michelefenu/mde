@@ -3,6 +3,7 @@
 
 #include "buffer.h"
 #include "render.h"
+#include "undo.h"
 #include <time.h>
 
 #define TMDE_QUIT_TIMES        2
@@ -34,6 +35,15 @@ typedef struct {
     int           preview_scroll_y;
     /* Word wrap */
     int    word_wrap;            /* 0 = off (horizontal scroll), 1 = on */
+    /* Undo / redo */
+    UndoStack undo;
+    UndoStack redo;
+    int       undo_seq;          /* Sequence counter — groups entries per keystroke */
+    /* Help mode */
+    int           help_mode;
+    int           help_was_preview; /* 1 if help was entered from preview mode */
+    PreviewBuffer help_buf;
+    int           help_scroll_y;
 } Editor;
 
 void editor_init(Editor *ed);

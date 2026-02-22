@@ -17,8 +17,13 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS)
 
+$(BUILDDIR)/help_md.h: docs/help.md | $(BUILDDIR)
+	xxd -i $< > $@
+
+$(BUILDDIR)/editor.o: $(BUILDDIR)/help_md.h
+
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) -MMD -c $< -o $@
+	$(CC) $(CFLAGS) -I$(BUILDDIR) -MMD -c $< -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

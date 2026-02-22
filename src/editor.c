@@ -1,5 +1,6 @@
 #include "editor.h"
 #include "render.h"
+#include "help_md.h"
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,6 +134,8 @@ static void editor_set_status(Editor *ed, const char *fmt, ...)
 typedef void (*PromptCallback)(Editor *ed, const char *input, int key);
 
 static void editor_refresh_screen(Editor *ed);   /* forward decl */
+static void editor_show_help(Editor *ed);        /* forward decl */
+static void editor_help_process_key(Editor *ed, int c);  /* forward decl */
 
 static char *editor_prompt(Editor *ed, const char *prompt_str,
                            PromptCallback cb)
@@ -303,6 +306,10 @@ static void editor_move_cursor(Editor *ed, int key)
 
 static void editor_insert_char(Editor *ed, int c)
 {
+    char ch = (char)c;
+    undo_push(&ed->undo, UNDO_INSERT, ed->cy, ed->cx,
+              &ch, 1, ed->cx, ed->cy, ed->undo_seq);
+    undo_stack_clear(&ed->redo);
     buffer_insert_char(&ed->buf, ed->cy, ed->cx, c);
     ed->cx++;
     ed->dirty++;
@@ -310,6 +317,9 @@ static void editor_insert_char(Editor *ed, int c)
 
 static void editor_insert_newline(Editor *ed)
 {
+    undo_push(&ed->undo, UNDO_SPLIT, ed->cy, ed->cx,
+              NULL, 0, ed->cx, ed->cy, ed->undo_seq);
+    undo_stack_clear(&ed->redo);
     buffer_insert_newline(&ed->buf, ed->cy, ed->cx);
     ed->cy++;
     ed->cx = 0;
@@ -324,11 +334,17 @@ static void editor_delete_backward(Editor *ed)
         const char *line = buffer_line_data(&ed->buf, ed->cy);
         int prev = utf8_prev_char(line, ed->cx);
         int count = ed->cx - prev;
+        undo_push(&ed->undo, UNDO_DELETE, ed->cy, prev,
+                  line + prev, count, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
         for (int i = 0; i < count; i++)
             buffer_delete_forward(&ed->buf, ed->cy, prev);
         ed->cx = prev;
     } else {
         int prev_len = buffer_line_len(&ed->buf, ed->cy - 1);
+        undo_push(&ed->undo, UNDO_JOIN, ed->cy - 1, prev_len,
+                  NULL, 0, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
         buffer_delete_char(&ed->buf, ed->cy, 0);
         ed->cy--;
         ed->cx = prev_len;
@@ -344,9 +360,15 @@ static void editor_delete_forward(Editor *ed)
     if (ed->cx < ll) {
         const char *line = buffer_line_data(&ed->buf, ed->cy);
         int count = utf8_char_bytes(line, ll, ed->cx);
+        undo_push(&ed->undo, UNDO_DELETE, ed->cy, ed->cx,
+                  line + ed->cx, count, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
         for (int i = 0; i < count; i++)
             buffer_delete_forward(&ed->buf, ed->cy, ed->cx);
     } else {
+        undo_push(&ed->undo, UNDO_JOIN, ed->cy, ed->cx,
+                  NULL, 0, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
         buffer_delete_forward(&ed->buf, ed->cy, ed->cx);
     }
     ed->dirty++;
@@ -356,8 +378,116 @@ static void editor_delete_to_eol(Editor *ed)
 {
     int ll = buffer_line_len(&ed->buf, ed->cy);
     if (ed->cx >= ll) return;
+    const char *line = buffer_line_data(&ed->buf, ed->cy);
+    undo_push(&ed->undo, UNDO_DELETE, ed->cy, ed->cx,
+              line + ed->cx, ll - ed->cx, ed->cx, ed->cy, ed->undo_seq);
+    undo_stack_clear(&ed->redo);
     buffer_truncate_line(&ed->buf, ed->cy, ed->cx);
     ed->dirty++;
+}
+
+/* ================================================================
+ *  Undo / Redo
+ * ================================================================ */
+
+static void undo_apply_reverse(Editor *ed, UndoEntry *e)
+{
+    switch (e->type) {
+    case UNDO_INSERT:
+        for (int i = 0; i < e->data_len; i++)
+            buffer_delete_forward(&ed->buf, e->row, e->col);
+        break;
+    case UNDO_DELETE:
+        for (int i = 0; i < e->data_len; i++)
+            buffer_insert_char(&ed->buf, e->row, e->col + i,
+                               (unsigned char)e->data[i]);
+        break;
+    case UNDO_SPLIT:
+        buffer_delete_char(&ed->buf, e->row + 1, 0);
+        break;
+    case UNDO_JOIN:
+        buffer_insert_newline(&ed->buf, e->row, e->col);
+        break;
+    }
+    ed->cx = e->old_cx;
+    ed->cy = e->old_cy;
+}
+
+static void undo_apply_forward(Editor *ed, UndoEntry *e)
+{
+    switch (e->type) {
+    case UNDO_INSERT:
+        for (int i = 0; i < e->data_len; i++)
+            buffer_insert_char(&ed->buf, e->row, e->col + i,
+                               (unsigned char)e->data[i]);
+        ed->cy = e->row;
+        ed->cx = e->col + e->data_len;
+        break;
+    case UNDO_DELETE:
+        for (int i = 0; i < e->data_len; i++)
+            buffer_delete_forward(&ed->buf, e->row, e->col);
+        ed->cy = e->row;
+        ed->cx = e->col;
+        break;
+    case UNDO_SPLIT:
+        buffer_insert_newline(&ed->buf, e->row, e->col);
+        ed->cy = e->row + 1;
+        ed->cx = 0;
+        break;
+    case UNDO_JOIN:
+        buffer_delete_char(&ed->buf, e->row + 1, 0);
+        ed->cy = e->row;
+        ed->cx = e->col;
+        break;
+    }
+}
+
+static void editor_undo(Editor *ed)
+{
+    if (undo_empty(&ed->undo)) {
+        editor_set_status(ed, "Nothing to undo");
+        return;
+    }
+
+    int seq = undo_top_seq(&ed->undo);
+    int count = 0;
+
+    while (!undo_empty(&ed->undo) && undo_top_seq(&ed->undo) == seq) {
+        UndoEntry *e = undo_pop(&ed->undo);
+        undo_apply_reverse(ed, e);
+        undo_push(&ed->redo, e->type, e->row, e->col,
+                  e->data, e->data_len, e->old_cx, e->old_cy, e->seq);
+        free(e->data);
+        e->data = NULL;
+        ed->dirty--;
+        count++;
+    }
+
+    editor_set_status(ed, "Undo (%d action%s)", count, count > 1 ? "s" : "");
+}
+
+static void editor_redo(Editor *ed)
+{
+    if (undo_empty(&ed->redo)) {
+        editor_set_status(ed, "Nothing to redo");
+        return;
+    }
+
+    int seq = undo_top_seq(&ed->redo);
+    int count = 0;
+
+    while (!undo_empty(&ed->redo) && undo_top_seq(&ed->redo) == seq) {
+        UndoEntry *e = undo_pop(&ed->redo);
+        undo_apply_forward(ed, e);
+        undo_push(&ed->undo, e->type, e->row, e->col,
+                  e->data, e->data_len, e->old_cx, e->old_cy, e->seq);
+        free(e->data);
+        e->data = NULL;
+        ed->dirty++;
+        count++;
+    }
+
+    editor_set_status(ed, "Redo (%d action%s)", count, count > 1 ? "s" : "");
 }
 
 /* ================================================================
@@ -550,6 +680,112 @@ static void clamp_preview_scroll(Editor *ed)
     if (ed->preview_scroll_y < 0)     ed->preview_scroll_y = 0;
 }
 
+/* ── Open link in browser ── */
+
+static void editor_open_url(const char *url)
+{
+    char cmd[1024];
+#ifdef __APPLE__
+    snprintf(cmd, sizeof(cmd), "open '%s'", url);
+#else
+    snprintf(cmd, sizeof(cmd), "xdg-open '%s'", url);
+#endif
+    def_prog_mode();
+    endwin();
+    system(cmd);
+    reset_prog_mode();
+    refresh();
+}
+
+typedef struct { char url[512]; char text[256]; } LinkInfo;
+
+static int editor_collect_links(Buffer *buf, LinkInfo *links, int max_links)
+{
+    int count = 0;
+    for (int r = 0; r < buf->num_lines && count < max_links; r++) {
+        const char *line = buffer_line_data(buf, r);
+        int len = buffer_line_len(buf, r);
+        for (int i = 0; i < len && count < max_links; i++) {
+            if (line[i] != '[') continue;
+            /* Skip images */
+            if (i > 0 && line[i - 1] == '!') continue;
+
+            int bracket_end = -1;
+            for (int j = i + 1; j < len; j++) {
+                if (line[j] == ']') { bracket_end = j; break; }
+            }
+            if (bracket_end < 0 || bracket_end + 1 >= len ||
+                line[bracket_end + 1] != '(') continue;
+
+            int paren_end = -1;
+            for (int j = bracket_end + 2; j < len; j++) {
+                if (line[j] == ')') { paren_end = j; break; }
+            }
+            if (paren_end < 0) continue;
+
+            int tlen = bracket_end - i - 1;
+            int ulen = paren_end - bracket_end - 2;
+            if (ulen <= 0) { i = paren_end; continue; }
+
+            LinkInfo *li = &links[count];
+            if (tlen >= (int)sizeof(li->text)) tlen = (int)sizeof(li->text) - 1;
+            memcpy(li->text, line + i + 1, tlen);
+            li->text[tlen] = '\0';
+
+            if (ulen >= (int)sizeof(li->url)) ulen = (int)sizeof(li->url) - 1;
+            memcpy(li->url, line + bracket_end + 2, ulen);
+            li->url[ulen] = '\0';
+
+            count++;
+            i = paren_end;
+        }
+    }
+    return count;
+}
+
+static void editor_preview_open_link(Editor *ed)
+{
+    LinkInfo links[64];
+    int n = editor_collect_links(&ed->buf, links, 64);
+
+    if (n == 0) {
+        editor_set_status(ed, "No links found in document");
+        return;
+    }
+
+    if (n == 1) {
+        editor_set_status(ed, "Opening: %s", links[0].url);
+        editor_open_url(links[0].url);
+        return;
+    }
+
+    /* Build a compact prompt listing links */
+    char list[1024];
+    int pos = 0;
+    for (int i = 0; i < n && pos < (int)sizeof(list) - 40; i++) {
+        pos += snprintf(list + pos, sizeof(list) - pos,
+                        "%d:%s  ", i + 1, links[i].text);
+    }
+    editor_set_status(ed, "%s", list);
+    editor_refresh_screen(ed);
+
+    char *input = editor_prompt(ed, "Open link #: ", NULL);
+    if (!input) {
+        editor_set_status(ed, "");
+        return;
+    }
+
+    int choice = atoi(input);
+    free(input);
+    if (choice < 1 || choice > n) {
+        editor_set_status(ed, "Invalid link number");
+        return;
+    }
+
+    editor_set_status(ed, "Opening: %s", links[choice - 1].url);
+    editor_open_url(links[choice - 1].url);
+}
+
 static void editor_preview_process_key(Editor *ed, int c)
 {
     switch (c) {
@@ -567,6 +803,14 @@ static void editor_preview_process_key(Editor *ed, int c)
         ed->word_wrap = !ed->word_wrap;
         clamp_preview_scroll(ed);
         editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
+        break;
+
+    case KEY_F(1):
+        editor_show_help(ed);
+        break;
+
+    case 'o':
+        editor_preview_open_link(ed);
         break;
 
     case KEY_UP:
@@ -616,6 +860,176 @@ static void editor_preview_process_key(Editor *ed, int c)
         preview_generate(&ed->preview_buf, &ed->buf, ed->screen_cols);
         ed->preview_scroll_y = preview_find_line(&ed->preview_buf, src);
         clamp_preview_scroll(ed);
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+/* ================================================================
+ *  Help mode
+ * ================================================================ */
+
+static int help_max_scroll(Editor *ed)
+{
+    if (ed->word_wrap) {
+        int n = ed->help_buf.num_lines;
+        if (n == 0) return 0;
+        int total = 0;
+        int first = n - 1;
+        for (int i = n - 1; i >= 0; i--) {
+            total += preview_wrap_height(&ed->help_buf.lines[i],
+                                         ed->screen_cols);
+            first = i;
+            if (total >= ed->screen_rows) break;
+        }
+        return first;
+    }
+    int max_s = ed->help_buf.num_lines - ed->screen_rows;
+    return max_s > 0 ? max_s : 0;
+}
+
+static void clamp_help_scroll(Editor *ed)
+{
+    int max_s = help_max_scroll(ed);
+    if (ed->help_scroll_y > max_s) ed->help_scroll_y = max_s;
+    if (ed->help_scroll_y < 0)     ed->help_scroll_y = 0;
+}
+
+static void editor_show_help(Editor *ed)
+{
+    ed->help_was_preview = ed->preview_mode;
+
+    getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+    ed->screen_rows -= 2;
+
+    Buffer tmp;
+    buffer_init(&tmp);
+    /* Free the default empty line */
+    for (int i = 0; i < tmp.num_lines; i++)
+        free(tmp.lines[i].data);
+    tmp.num_lines = 0;
+
+    /* Parse embedded help markdown into lines */
+    const char *p = (const char *)docs_help_md;
+    const char *end = p + docs_help_md_len;
+    while (p < end) {
+        const char *nl = memchr(p, '\n', end - p);
+        int len = nl ? (int)(nl - p) : (int)(end - p);
+        /* Strip trailing \r */
+        if (len > 0 && p[len - 1] == '\r') len--;
+        buffer_insert_line(&tmp, tmp.num_lines, p, len);
+        p += (nl ? (int)(nl - p) + 1 : (int)(end - p));
+    }
+    if (tmp.num_lines == 0)
+        buffer_insert_line(&tmp, 0, "", 0);
+
+    preview_free(&ed->help_buf);
+    preview_generate(&ed->help_buf, &tmp, ed->screen_cols);
+    buffer_free(&tmp);
+
+    ed->help_mode = 1;
+    ed->help_scroll_y = 0;
+    curs_set(0);
+    editor_set_status(ed, "Help — press q or Esc to close");
+}
+
+static void editor_close_help(Editor *ed)
+{
+    preview_free(&ed->help_buf);
+    ed->help_mode = 0;
+
+    if (ed->help_was_preview) {
+        curs_set(0);
+        editor_set_status(ed, "Preview mode — Ctrl+P or q to return");
+    } else {
+        curs_set(1);
+        editor_set_status(ed, "");
+    }
+}
+
+static void editor_help_process_key(Editor *ed, int c)
+{
+    switch (c) {
+    case 'q':
+    case 27:
+    case KEY_F(1):
+        editor_close_help(ed);
+        break;
+
+    case CTRL_KEY('q'):
+        ed->quit = 1;
+        break;
+
+    case CTRL_KEY('w'):
+        ed->word_wrap = !ed->word_wrap;
+        clamp_help_scroll(ed);
+        editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
+        break;
+
+    case KEY_UP:
+    case 'k':
+        ed->help_scroll_y--;
+        clamp_help_scroll(ed);
+        break;
+
+    case KEY_DOWN:
+    case 'j':
+    case '\r':
+    case '\n':
+    case KEY_ENTER:
+        ed->help_scroll_y++;
+        clamp_help_scroll(ed);
+        break;
+
+    case KEY_PPAGE:
+        ed->help_scroll_y -= ed->screen_rows;
+        clamp_help_scroll(ed);
+        break;
+
+    case KEY_NPAGE:
+    case ' ':
+        ed->help_scroll_y += ed->screen_rows;
+        clamp_help_scroll(ed);
+        break;
+
+    case KEY_HOME:
+    case 'g':
+        ed->help_scroll_y = 0;
+        break;
+
+    case KEY_END:
+    case 'G':
+        ed->help_scroll_y = ed->help_buf.num_lines - ed->screen_rows;
+        clamp_help_scroll(ed);
+        break;
+
+    case KEY_RESIZE: {
+        getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+        ed->screen_rows -= 2;
+        /* Regenerate help preview for new width */
+        Buffer tmp;
+        buffer_init(&tmp);
+        for (int i = 0; i < tmp.num_lines; i++)
+            free(tmp.lines[i].data);
+        tmp.num_lines = 0;
+        const char *p = (const char *)docs_help_md;
+        const char *end = p + docs_help_md_len;
+        while (p < end) {
+            const char *nl = memchr(p, '\n', end - p);
+            int len = nl ? (int)(nl - p) : (int)(end - p);
+            if (len > 0 && p[len - 1] == '\r') len--;
+            buffer_insert_line(&tmp, tmp.num_lines, p, len);
+            p += (nl ? (int)(nl - p) + 1 : (int)(end - p));
+        }
+        if (tmp.num_lines == 0)
+            buffer_insert_line(&tmp, 0, "", 0);
+        preview_free(&ed->help_buf);
+        preview_generate(&ed->help_buf, &tmp, ed->screen_cols);
+        buffer_free(&tmp);
+        clamp_help_scroll(ed);
         break;
     }
 
@@ -744,6 +1158,38 @@ static void editor_draw_preview_rows(Editor *ed)
     }
 }
 
+static void editor_draw_help_rows(Editor *ed)
+{
+    if (ed->word_wrap) {
+        int y = 0;
+        int prow = ed->help_scroll_y;
+        while (y < ed->screen_rows && prow < ed->help_buf.num_lines) {
+            int remaining = ed->screen_rows - y;
+            int used = preview_draw_line_wrapped(y, ed->screen_cols,
+                                                 &ed->help_buf.lines[prow],
+                                                 remaining);
+            y += used;
+            prow++;
+        }
+        while (y < ed->screen_rows) {
+            move(y, 0);
+            clrtoeol();
+            y++;
+        }
+    } else {
+        for (int y = 0; y < ed->screen_rows; y++) {
+            int prow = ed->help_scroll_y + y;
+            if (prow < ed->help_buf.num_lines) {
+                preview_draw_line(y, ed->screen_cols,
+                                  &ed->help_buf.lines[prow], 0);
+            } else {
+                move(y, 0);
+                clrtoeol();
+            }
+        }
+    }
+}
+
 static void editor_draw_statusbar(Editor *ed)
 {
     int y = ed->screen_rows;
@@ -754,7 +1200,13 @@ static void editor_draw_statusbar(Editor *ed)
     char left[256], right[128];
     int llen, rlen;
 
-    if (ed->preview_mode) {
+    if (ed->help_mode) {
+        llen = snprintf(left, sizeof(left), " [HELP]");
+        int max_s = help_max_scroll(ed);
+        int pct = (max_s > 0) ? (ed->help_scroll_y * 100 / max_s) : 100;
+        rlen = snprintf(right, sizeof(right), "%d%% (%d/%d) ",
+                        pct, ed->help_scroll_y + 1, ed->help_buf.num_lines);
+    } else if (ed->preview_mode) {
         llen = snprintf(left, sizeof(left), " %s [PREVIEW]",
                         ed->filename ? ed->filename : "[New File]");
         int cur = ed->preview_scroll_y + 1;
@@ -800,12 +1252,15 @@ static void editor_draw_statusbar(Editor *ed)
         attroff(A_BOLD);
     } else {
         const char *help;
-        if (ed->preview_mode)
+        if (ed->help_mode)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
-                   "Ctrl+W Wrap | q/Esc/Ctrl+P Edit | Ctrl+Q Quit";
+                   "q/Esc Close";
+        else if (ed->preview_mode)
+            help = "j/k Scroll | Space PgDn | g/G Top/Bot | o Open Link | "
+                   "F1 Help | q/Esc/Ctrl+P Edit";
         else
-            help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+F Search | "
-                   "Ctrl+N Next | Ctrl+G Goto | Ctrl+P Preview | Ctrl+W Wrap";
+            help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+Z Undo | Ctrl+Y Redo | "
+                   "Ctrl+F Search | Ctrl+P Preview | F1 Help";
         attron(A_DIM);
         int hl = (int)strlen(help);
         if (hl > ed->screen_cols) hl = ed->screen_cols;
@@ -821,7 +1276,10 @@ static void editor_refresh_screen(Editor *ed)
     ed->screen_rows -= 2;          /* status bar + message line */
     if (ed->screen_rows < 1) ed->screen_rows = 1;
 
-    if (ed->preview_mode) {
+    if (ed->help_mode) {
+        clamp_help_scroll(ed);
+        editor_draw_help_rows(ed);
+    } else if (ed->preview_mode) {
         clamp_preview_scroll(ed);
         editor_draw_preview_rows(ed);
     } else {
@@ -831,8 +1289,8 @@ static void editor_refresh_screen(Editor *ed)
 
     editor_draw_statusbar(ed);
 
-    if (ed->preview_mode) {
-        /* Hide cursor in preview */
+    if (ed->help_mode || ed->preview_mode) {
+        /* Hide cursor in preview / help */
         move(ed->screen_rows, 0);
     } else if (ed->word_wrap) {
         /* Place cursor accounting for wrapped lines */
@@ -873,11 +1331,19 @@ static void editor_process_key(Editor *ed)
     int  utf8_len;
     int  c = editor_read_key(utf8, &utf8_len);
 
+    /* Help mode has its own key handler */
+    if (ed->help_mode) {
+        editor_help_process_key(ed, c);
+        return;
+    }
+
     /* Preview mode has its own key handler */
     if (ed->preview_mode) {
         editor_preview_process_key(ed, c);
         return;
     }
+
+    ed->undo_seq++;
 
     if (c != CTRL_KEY('q'))
         ed->quit_times = TMDE_QUIT_TIMES;
@@ -927,6 +1393,14 @@ static void editor_process_key(Editor *ed)
         editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
         break;
 
+    /* ── Undo / Redo ── */
+    case CTRL_KEY('z'):
+        editor_undo(ed);
+        break;
+    case CTRL_KEY('y'):
+        editor_redo(ed);
+        break;
+
     /* ── Delete to end of line ── */
     case CTRL_KEY('k'):
         editor_delete_to_eol(ed);
@@ -943,6 +1417,11 @@ static void editor_process_key(Editor *ed)
     /* ── Refresh ── */
     case CTRL_KEY('l'):
         clear();
+        break;
+
+    /* ── Help ── */
+    case KEY_F(1):
+        editor_show_help(ed);
         break;
 
     /* ── Enter ── */
@@ -1010,6 +1489,8 @@ void editor_init(Editor *ed)
 {
     memset(ed, 0, sizeof(Editor));
     buffer_init(&ed->buf);
+    undo_stack_init(&ed->undo);
+    undo_stack_init(&ed->redo);
     ed->quit_times = TMDE_QUIT_TIMES;
 }
 
@@ -1017,6 +1498,9 @@ void editor_free(Editor *ed)
 {
     buffer_free(&ed->buf);
     preview_free(&ed->preview_buf);
+    preview_free(&ed->help_buf);
+    undo_stack_free(&ed->undo);
+    undo_stack_free(&ed->redo);
     free(ed->filename);
     ed->filename = NULL;
 }

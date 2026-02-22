@@ -18,7 +18,6 @@
 make
 ./tmde sample.md
 ```
-jljlj
 
 ## Key Bindings
 
