@@ -1,4 +1,5 @@
 #include "render.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -285,7 +286,8 @@ static void apply_strikethrough(const char *text, int len,
 
 /* --- Pass 6: links [text](url) and images ![alt](url) --- */
 static void apply_links(const char *text, int len,
-                        CharStyle *styles, char *claimed)
+                        CharStyle *styles, char *claimed,
+                        int *link_idx_at, int *next_link_idx)
 {
     for (int i = 0; i < len; ) {
         if (claimed[i] || text[i] != '[') { i++; continue; }
@@ -332,6 +334,10 @@ static void apply_links(const char *text, int len,
             claimed[j] = 1;
         }
 
+        /* Record link index for preview (skip images) */
+        if (link_idx_at && next_link_idx && !img_bang)
+            link_idx_at[bracket_end - 1] = ++(*next_link_idx);
+
         i = paren_end + 1;
     }
 }
@@ -346,7 +352,7 @@ static void apply_inline_styles(const char *text, int len, CharStyle *styles)
     apply_emphasis(text, len, styles, claimed, 2); /* **  bold        */
     apply_emphasis(text, len, styles, claimed, 1); /* *   italic      */
     apply_strikethrough(text, len, styles, claimed);
-    apply_links(text, len, styles, claimed);
+    apply_links(text, len, styles, claimed, NULL, NULL);
 
     free(claimed);
 }
@@ -560,11 +566,13 @@ int render_draw_line_wrapped(int screen_y, int screen_cols,
  * ================================================================ */
 
 /* Run the same multi-pass inline analysis as edit mode, then build a
-   new string that omits delimiter characters (claimed == 1). */
+   new string that omits delimiter characters (claimed == 1).
+   next_link_idx: when non-NULL, link indices (1,2,3...) are appended
+   after each link for preview mode; caller must persist across blocks. */
 static void strip_inline(const char *src, int src_len,
                          attr_t base_attr, short base_cpair,
                          char **out_text, CharStyle **out_styles,
-                         int *out_len)
+                         int *out_len, int *next_link_idx)
 {
     if (src_len <= 0) {
         *out_text   = calloc(1, 1);
@@ -580,19 +588,22 @@ static void strip_inline(const char *src, int src_len,
     }
 
     char *claimed = calloc(src_len + 1, 1);
+    int  *link_idx_at = calloc(src_len + 1, sizeof(int));
     apply_code_spans(src, src_len, raw, claimed);
     apply_emphasis(src, src_len, raw, claimed, 3);
     apply_emphasis(src, src_len, raw, claimed, 2);
     apply_emphasis(src, src_len, raw, claimed, 1);
     apply_strikethrough(src, src_len, raw, claimed);
-    apply_links(src, src_len, raw, claimed);
+    apply_links(src, src_len, raw, claimed, link_idx_at, next_link_idx);
 
-    char      *text   = malloc(src_len + 1);
-    CharStyle *styles = malloc((src_len + 1) * sizeof(CharStyle));
+    int max_len = src_len + 256;
+    char      *text   = malloc(max_len + 1);
+    CharStyle *styles = malloc((max_len + 1) * sizeof(CharStyle));
     int        len    = 0;
 
     for (int i = 0; i < src_len; i++) {
         if (claimed[i] == 1) continue;          /* skip delimiters */
+        if (len >= max_len) break;
         text[len]   = src[i];
         styles[len] = raw[i];
         if (styles[len].cpair == CP_DIMMED) {   /* safety: no dim leaks */
@@ -600,11 +611,23 @@ static void strip_inline(const char *src, int src_len,
             styles[len].cpair = base_cpair;
         }
         len++;
+        /* Append link index (N) after link text in preview */
+        if (link_idx_at[i] != 0 && len + 16 < max_len) {
+            char buf[16];
+            int n = snprintf(buf, sizeof(buf), " (%d)", link_idx_at[i]);
+            for (int k = 0; k < n; k++) {
+                text[len] = buf[k];
+                styles[len].attr  = base_attr;
+                styles[len].cpair = CP_DIMMED;
+                len++;
+            }
+        }
     }
     text[len] = '\0';
 
     free(raw);
     free(claimed);
+    free(link_idx_at);
     *out_text   = text;
     *out_styles = styles;
     *out_len    = len;
@@ -679,7 +702,7 @@ static void pv_set_acs(PreviewLine *pl, int pos,
  * ================================================================ */
 
 static void gen_heading(PreviewBuffer *pb, const char *line, int len,
-                        int source_row, int screen_cols)
+                        int source_row, int screen_cols, int *link_idx)
 {
     int hlevel = render_heading_level(line);
     int indent = (hlevel <= 1) ? 0 : (hlevel - 1) * 2;
@@ -700,7 +723,7 @@ static void gen_heading(PreviewBuffer *pb, const char *line, int len,
     if (i < len && line[i] == ' ') i++;
 
     char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, A_BOLD, cpair, &ct, &cs, &cl);
+    strip_inline(line + i, len - i, A_BOLD, cpair, &ct, &cs, &cl, link_idx);
 
     int total = indent + cl;
     PreviewLine *pl = pv_add(pb, source_row, total);
@@ -720,10 +743,10 @@ static void gen_heading(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
-                          int source_row, int body_indent)
+                          int source_row, int body_indent, int *link_idx)
 {
     char *ct; CharStyle *cs; int cl;
-    strip_inline(line, len, 0, CP_DEFAULT, &ct, &cs, &cl);
+    strip_inline(line, len, 0, CP_DEFAULT, &ct, &cs, &cl, link_idx);
     int total = body_indent + cl;
     PreviewLine *pl = pv_add(pb, source_row, total);
     int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
@@ -733,7 +756,7 @@ static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row, int body_indent)
+                      int source_row, int body_indent, int *link_idx)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
@@ -742,7 +765,7 @@ static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
     if (i < len && line[i] == ' ') i++;
 
     char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl);
+    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl, link_idx);
 
     int total = indent + 2 + cl;
     PreviewLine *pl = pv_add(pb, source_row, total);
@@ -756,7 +779,7 @@ static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_olist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row, int body_indent)
+                      int source_row, int body_indent, int *link_idx)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
@@ -768,7 +791,7 @@ static void gen_olist(PreviewBuffer *pb, const char *line, int len,
     int prefix_len = i - ns;
 
     char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl);
+    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl, link_idx);
 
     int total = indent + prefix_len + cl;
     PreviewLine *pl = pv_add(pb, source_row, total);
@@ -785,7 +808,7 @@ static void gen_olist(PreviewBuffer *pb, const char *line, int len,
 }
 
 static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
-                           int source_row, int body_indent)
+                           int source_row, int body_indent, int *link_idx)
 {
     int i = 0;
     while (i < len && line[i] == ' ') i++;
@@ -794,7 +817,7 @@ static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
     if (i < len && line[i] == ' ') i++;
 
     char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, 0, CP_BLOCKQUOTE, &ct, &cs, &cl);
+    strip_inline(line + i, len - i, 0, CP_BLOCKQUOTE, &ct, &cs, &cl, link_idx);
 
     int total = indent + 2 + cl;
     PreviewLine *pl = pv_add(pb, source_row, total);
@@ -1121,6 +1144,7 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
 
     int in_code = 0;
     int body_indent = 0;
+    int link_idx = 0;
     int row = 0;
 
     while (row < buf->num_lines) {
@@ -1165,7 +1189,7 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
 
         switch (bt) {
         case BLOCK_HEADING:
-            gen_heading(pb, line, len, row, screen_cols);
+            gen_heading(pb, line, len, row, screen_cols, &link_idx);
             { int hl = render_heading_level(line);
               body_indent = (hl <= 1) ? 0 : (hl - 1) * 2;
               if (body_indent > 8) body_indent = 8; }
@@ -1173,19 +1197,19 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
         case BLOCK_HRULE:
             gen_hrule(pb, row, screen_cols, body_indent); break;
         case BLOCK_LIST_UNORDERED:
-            gen_ulist(pb, line, len, row, body_indent); break;
+            gen_ulist(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_LIST_ORDERED:
-            gen_olist(pb, line, len, row, body_indent); break;
+            gen_olist(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_BLOCKQUOTE:
-            gen_blockquote(pb, line, len, row, body_indent); break;
+            gen_blockquote(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_CODE_CONTENT:
             /* Shouldn't happen — code blocks are collected above.
                Fall through to paragraph as a safety net. */
-            gen_paragraph(pb, line, len, row, body_indent); break;
+            gen_paragraph(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_EMPTY:
             gen_empty(pb, row); break;
         default:
-            gen_paragraph(pb, line, len, row, body_indent); break;
+            gen_paragraph(pb, line, len, row, body_indent, &link_idx); break;
         }
         row++;
     }
