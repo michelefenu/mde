@@ -682,7 +682,7 @@ static void clamp_preview_scroll(Editor *ed)
 
 /* ── Open link in browser ── */
 
-static void editor_open_url(const char *url)
+static void editor_open_url(Editor *ed, const char *url)
 {
     char cmd[1024];
 #ifdef __APPLE__
@@ -692,9 +692,11 @@ static void editor_open_url(const char *url)
 #endif
     def_prog_mode();
     endwin();
-    system(cmd);
+    int ret = system(cmd);
     reset_prog_mode();
     refresh();
+    if (ret != 0)
+        editor_set_status(ed, "Could not open URL");
 }
 
 typedef struct { char url[512]; char text[256]; } LinkInfo;
@@ -755,7 +757,7 @@ static void editor_preview_open_link(Editor *ed)
 
     if (n == 1) {
         editor_set_status(ed, "Opening: %s", links[0].url);
-        editor_open_url(links[0].url);
+        editor_open_url(ed, links[0].url);
         return;
     }
 
@@ -783,7 +785,7 @@ static void editor_preview_open_link(Editor *ed)
     }
 
     editor_set_status(ed, "Opening: %s", links[choice - 1].url);
-    editor_open_url(links[choice - 1].url);
+    editor_open_url(ed, links[choice - 1].url);
 }
 
 static void editor_preview_process_key(Editor *ed, int c)
