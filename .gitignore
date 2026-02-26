@@ -1,3 +1,11 @@
+# OS-specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
 # Prerequisites
 *.d
 
