@@ -1,7 +1,8 @@
+![mde logo](images/logo-64x64.png)
+
 # mde 
 
-A minimal, terminal-based markdown editor that provides WYSIWYG-like
-rendering of markdown formatting directly in the terminal.
+A minimal, terminal-based markdown editor that provides rendering preview of markdown formatting directly in the terminal.
 
 ![C](https://img.shields.io/badge/language-C99-blue)
 
