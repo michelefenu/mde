@@ -55,6 +55,9 @@ This produces the `mde` binary in the project root.
 
 ### Edit Mode
 
+![Edit mode](images/edit-mode.png)
+*Edit mode: markdown syntax with dimmed delimiters*
+
 | Key           | Action                          |
 |---------------|---------------------------------|
 | Ctrl+S        | Save (prompts for name if new)  |
@@ -74,6 +77,9 @@ This produces the `mde` binary in the project root.
 | Escape        | Clear search highlighting       |
 
 ### Preview Mode
+
+![Preview mode](images/preview-mode.png)
+*Preview mode: read-only rendered view with hidden syntax markers*
 
 | Key               | Action                          |
 |-------------------|---------------------------------|
