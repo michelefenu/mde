@@ -1245,7 +1245,7 @@ static void editor_draw_statusbar(Editor *ed)
     clrtoeol();
 
     if (ed->statusmsg[0] &&
-        time(NULL) - ed->statusmsg_time < TMDE_STATUS_MSG_TIMEOUT) {
+        time(NULL) - ed->statusmsg_time < MDE_STATUS_MSG_TIMEOUT) {
         attron(A_BOLD);
         int ml = (int)strlen(ed->statusmsg);
         if (ml > ed->screen_cols) ml = ed->screen_cols;
@@ -1348,7 +1348,7 @@ static void editor_process_key(Editor *ed)
     ed->undo_seq++;
 
     if (c != CTRL_KEY('q'))
-        ed->quit_times = TMDE_QUIT_TIMES;
+        ed->quit_times = MDE_QUIT_TIMES;
 
     switch (c) {
 
@@ -1447,7 +1447,7 @@ static void editor_process_key(Editor *ed)
 
     /* ── Tab ── */
     case '\t':
-        for (int i = 0; i < TMDE_TAB_STOP; i++)
+        for (int i = 0; i < MDE_TAB_STOP; i++)
             editor_insert_char(ed, ' ');
         break;
 
@@ -1493,7 +1493,7 @@ void editor_init(Editor *ed)
     buffer_init(&ed->buf);
     undo_stack_init(&ed->undo);
     undo_stack_init(&ed->redo);
-    ed->quit_times = TMDE_QUIT_TIMES;
+    ed->quit_times = MDE_QUIT_TIMES;
 }
 
 void editor_free(Editor *ed)
@@ -1521,7 +1521,7 @@ void editor_run(Editor *ed)
         render_init_colors();
 
     editor_set_status(ed,
-        "tmde — Terminal Markdown Editor  |  "
+        "mde — Terminal Markdown Editor  |  "
         "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Preview");
 
     while (!ed->quit) {

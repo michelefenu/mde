@@ -5,7 +5,7 @@ CFLAGS  += $(shell pkg-config --cflags ncursesw 2>/dev/null)
 
 SRCDIR   = src
 BUILDDIR = build
-TARGET   = tmde
+TARGET   = mde
 
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(SRCS:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)

@@ -6,9 +6,9 @@
 #include "undo.h"
 #include <time.h>
 
-#define TMDE_QUIT_TIMES        2
-#define TMDE_TAB_STOP          4
-#define TMDE_STATUS_MSG_TIMEOUT 5
+#define MDE_QUIT_TIMES         2
+#define MDE_TAB_STOP           4
+#define MDE_STATUS_MSG_TIMEOUT 5
 
 typedef struct {
     Buffer buf;

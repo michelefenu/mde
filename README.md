@@ -1,4 +1,4 @@
-# tmde 
+# mde 
 
 A minimal, terminal-based markdown editor that provides WYSIWYG-like
 rendering of markdown formatting directly in the terminal.
@@ -35,19 +35,19 @@ rendering of markdown formatting directly in the terminal.
 make
 ```
 
-This produces the `tmde` binary in the project root.
+This produces the `mde` binary in the project root.
 
 ## Usage
 
 ```bash
 # Open an existing file
-./tmde README.md
+./mde README.md
 
 # Create a new file
-./tmde
+./mde
 
 # Try the included sample
-./tmde sample.md
+./mde sample.md
 ```
 
 ## Key Bindings

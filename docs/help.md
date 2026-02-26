@@ -1,4 +1,4 @@
-# tmde — Keyboard Shortcuts
+# mde — Keyboard Shortcuts
 
 ## Edit Mode
 

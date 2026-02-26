@@ -1,6 +1,6 @@
-# Welcome to tmde
+# Welcome to mde
 
-**tmde** is a *terminal-based* markdown editor written in C.
+**mde** is a *terminal-based* markdown editor written in C.
 
 ## Features
 
@@ -16,7 +16,7 @@
 
 ```bash
 make
-./tmde sample.md
+./mde sample.md
 ```
 
 ## Key Bindings
