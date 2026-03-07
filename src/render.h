@@ -97,4 +97,15 @@ int  preview_draw_line_wrapped(int screen_y, int screen_cols,
                                PreviewLine *pl, int max_rows);
 int  preview_find_line(PreviewBuffer *pb, int buffer_row);
 
+/* ── PreviewBuffer construction helpers (used by render.c and render_table.c) ── */
+PreviewLine *pv_add(PreviewBuffer *pb, int source_row, int len);
+int          pv_fill(PreviewLine *pl, int pos, int n,
+                     char ch, attr_t attr, short cpair);
+int          pv_copy(PreviewLine *pl, int pos,
+                     const char *t, const CharStyle *s, int n);
+int          pv_fill_acs(PreviewLine *pl, int pos, int n,
+                         unsigned char acs_id, attr_t attr, short cpair);
+void         pv_set_acs(PreviewLine *pl, int pos,
+                        unsigned char acs_id, attr_t attr, short cpair);
+
 #endif

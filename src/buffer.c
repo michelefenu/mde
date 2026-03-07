@@ -1,4 +1,5 @@
 #include "buffer.h"
+#include "xalloc.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -12,7 +13,7 @@ static void line_init(Line *line, const char *data, int len)
     line->cap = len + 1;
     if (line->cap < INITIAL_LINE_CAP)
         line->cap = INITIAL_LINE_CAP;
-    line->data = malloc(line->cap);
+    line->data = xmalloc(line->cap);
     if (data && len > 0)
         memcpy(line->data, data, len);
     line->data[len] = '\0';
@@ -31,7 +32,7 @@ static void line_ensure_cap(Line *line, int needed)
 {
     if (needed + 1 > line->cap) {
         line->cap = (needed + 1) * 2;
-        line->data = realloc(line->data, line->cap);
+        line->data = xrealloc(line->data, line->cap);
     }
 }
 
@@ -40,7 +41,7 @@ static void line_ensure_cap(Line *line, int needed)
 void buffer_init(Buffer *buf)
 {
     buf->cap_lines = INITIAL_LINES_CAP;
-    buf->lines     = malloc(sizeof(Line) * buf->cap_lines);
+    buf->lines     = xmalloc(sizeof(Line) * buf->cap_lines);
     buf->num_lines = 0;
     buffer_insert_line(buf, 0, "", 0);
 }
@@ -62,7 +63,7 @@ void buffer_insert_line(Buffer *buf, int at, const char *text, int len)
 
     if (buf->num_lines >= buf->cap_lines) {
         buf->cap_lines *= 2;
-        buf->lines = realloc(buf->lines, sizeof(Line) * buf->cap_lines);
+        buf->lines = xrealloc(buf->lines, sizeof(Line) * buf->cap_lines);
     }
 
     memmove(&buf->lines[at + 1], &buf->lines[at],
@@ -144,7 +145,7 @@ void buffer_insert_newline(Buffer *buf, int row, int col)
 
     /* Copy tail before potential realloc */
     int   tail_len = line->len - col;
-    char *tail     = malloc(tail_len + 1);
+    char *tail     = xmalloc(tail_len + 1);
     memcpy(tail, &line->data[col], tail_len);
     tail[tail_len] = '\0';
 
@@ -189,13 +190,16 @@ int buffer_load(Buffer *buf, const char *filename)
         line_free(&buf->lines[i]);
     buf->num_lines = 0;
 
-    char tmp[8192];
-    while (fgets(tmp, sizeof(tmp), fp)) {
-        int len = (int)strlen(tmp);
-        while (len > 0 && (tmp[len - 1] == '\n' || tmp[len - 1] == '\r'))
+    char   *line = NULL;
+    size_t  cap  = 0;
+    ssize_t n;
+    while ((n = getline(&line, &cap, fp)) != -1) {
+        int len = (int)n;
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
             len--;
-        buffer_insert_line(buf, buf->num_lines, tmp, len);
+        buffer_insert_line(buf, buf->num_lines, line, len);
     }
+    free(line);
     fclose(fp);
 
     if (buf->num_lines == 0)

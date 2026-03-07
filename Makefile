@@ -21,6 +21,7 @@ $(BUILDDIR)/help_md.h: docs/help.md | $(BUILDDIR)
 	xxd -i $< > $@
 
 $(BUILDDIR)/editor.o: $(BUILDDIR)/help_md.h
+$(BUILDDIR)/help.o: $(BUILDDIR)/help_md.h
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(BUILDDIR) -MMD -c $< -o $@

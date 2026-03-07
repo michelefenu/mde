@@ -1,4 +1,5 @@
 #include "undo.h"
+#include "xalloc.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,7 +8,7 @@
 void undo_stack_init(UndoStack *s)
 {
     s->cap     = INITIAL_CAP;
-    s->entries = malloc(sizeof(UndoEntry) * s->cap);
+    s->entries = xmalloc(sizeof(UndoEntry) * s->cap);
     s->count   = 0;
 }
 
@@ -34,7 +35,7 @@ void undo_push(UndoStack *s, UndoType type, int row, int col,
 {
     if (s->count >= s->cap) {
         s->cap *= 2;
-        s->entries = realloc(s->entries, sizeof(UndoEntry) * s->cap);
+        s->entries = xrealloc(s->entries, sizeof(UndoEntry) * s->cap);
     }
 
     UndoEntry *e = &s->entries[s->count++];
@@ -47,7 +48,7 @@ void undo_push(UndoStack *s, UndoType type, int row, int col,
     e->seq      = seq;
 
     if (data && data_len > 0) {
-        e->data = malloc(data_len);
+        e->data = xmalloc(data_len);
         memcpy(e->data, data, data_len);
     } else {
         e->data     = NULL;

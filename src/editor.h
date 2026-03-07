@@ -10,6 +10,8 @@
 #define MDE_TAB_STOP           4
 #define MDE_STATUS_MSG_TIMEOUT 5
 
+#define CTRL_KEY(k) ((k) & 0x1f)
+
 typedef struct {
     Buffer buf;
     int    cx, cy;           /* Cursor position (col, row in buffer) */
@@ -50,5 +52,11 @@ void editor_init(Editor *ed);
 void editor_free(Editor *ed);
 void editor_open(Editor *ed, const char *filename);
 void editor_run(Editor *ed);
+
+/* Internal API used by sub-modules (search, help, preview_ui) */
+typedef void (*PromptCallback)(Editor *ed, const char *input, int key);
+char *editor_prompt(Editor *ed, const char *prompt_str, PromptCallback cb);
+void  editor_set_status(Editor *ed, const char *fmt, ...);
+void  editor_refresh_screen(Editor *ed);
 
 #endif
