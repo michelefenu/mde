@@ -1,29 +1,24 @@
 ![mde logo](images/logo-64x64.png)
 
-# mde 
+# mde
 
-A minimal, terminal-based markdown editor that provides rendering preview of markdown formatting directly in the terminal.
+A terminal-based markdown editor written in C. Edit and preview markdown files without leaving the terminal.
 
 ![C](https://img.shields.io/badge/language-C99-blue)
 
 ## Features
 
-- **Live markdown rendering**: headings, bold, italic, strikethrough, inline code,
-  links, lists, blockquotes, code blocks, and horizontal rules are styled in real time
-- **Preview mode**: Ctrl+P toggles a read-only rendered view with hidden syntax
-  markers, man-page-style heading indentation, and box-drawing table borders
-- **Word wrap**: Ctrl+W toggles character-level wrapping at the screen edge in both
-  edit and preview mode; status bar shows "wrap" when enabled
-- **Syntax markers dimmed**: in edit mode, markdown delimiters (`#`, `*`, `` ` ``, etc.)
-  are shown in a muted colour so the content stands out
-- **Incremental search**: Ctrl+F with live highlighting, Ctrl+N for next match
-- **Status bar**: filename, cursor position, line count, and unsaved-change indicator
-- **Modeless editing**: always in edit mode, commands via Ctrl+key combinations
-- **Saves raw markdown**: files are saved as standard `.md`, never rendered output
+- **Live syntax styling**: headings, bold, italic, strikethrough, inline code, links, lists, blockquotes, code blocks, and horizontal rules are coloured and styled as you type; markdown delimiters are dimmed so the content stays readable
+- **Preview mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders
+- **List autocompletion**: pressing Enter on a list item starts the next item automatically — `- `, `* `, `+ ` for unordered; incremented numbers for ordered (`1.` → `2.`, `1)` → `2)`) with indentation preserved; pressing Enter on an empty list item exits the list
+- **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and preview mode
+- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match
+- **Undo/redo**: full undo history with Ctrl+Z / Ctrl+Y; operations like list continuation undo atomically
+- **Status bar**: filename, cursor position, line count, dirty indicator
 
 ## Requirements
 
-- A C99 compiler (gcc, clang, etc.)
+- A C99 compiler (gcc or clang)
 - ncurses development library
   - **macOS**: included with Xcode Command Line Tools
   - **Debian / Ubuntu**: `sudo apt install libncurses-dev`
@@ -36,19 +31,18 @@ A minimal, terminal-based markdown editor that provides rendering preview of mar
 make
 ```
 
-This produces the `mde` binary in the project root.
+Produces the `mde` binary in the project root. To clean build artifacts:
+
+```bash
+make clean
+```
 
 ## Usage
 
 ```bash
-# Open an existing file
-./mde README.md
-
-# Create a new file
-./mde
-
-# Try the included sample
-./mde sample.md
+./mde file.md       # open an existing file
+./mde               # start with an empty buffer
+./mde sample.md     # try the included sample
 ```
 
 ## Key Bindings
@@ -58,73 +52,77 @@ This produces the `mde` binary in the project root.
 ![Edit mode](images/edit-mode.png)
 *Edit mode: markdown syntax with dimmed delimiters*
 
-| Key           | Action                          |
-|---------------|---------------------------------|
-| Ctrl+S        | Save (prompts for name if new)  |
-| Ctrl+Q        | Quit (confirm if unsaved)       |
-| Ctrl+P        | Switch to preview mode          |
-| Ctrl+W        | Toggle word wrap                |
-| Ctrl+F        | Incremental search              |
-| Ctrl+N        | Find next search match          |
-| Ctrl+G        | Go to line number               |
-| Ctrl+K        | Delete from cursor to end of line |
-| Ctrl+A / Home | Move to beginning of line       |
-| Ctrl+E / End  | Move to end of line             |
-| Ctrl+L        | Force screen refresh            |
-| Tab           | Insert 4 spaces                 |
-| Page Up/Down  | Scroll by page                  |
-| Arrow keys    | Navigate                        |
-| Escape        | Clear search highlighting       |
+| Key               | Action                                  |
+|-------------------|-----------------------------------------|
+| Ctrl+S            | Save (prompts for filename if new)      |
+| Ctrl+Q            | Quit (confirm if unsaved)               |
+| Ctrl+P            | Switch to preview mode                  |
+| Ctrl+W            | Toggle word wrap                        |
+| Ctrl+F            | Incremental search                      |
+| Ctrl+N            | Next search match                       |
+| Ctrl+G            | Go to line number                       |
+| Ctrl+K            | Delete to end of line                   |
+| Ctrl+Z            | Undo                                    |
+| Ctrl+Y            | Redo                                    |
+| Ctrl+A / Home     | Beginning of line                       |
+| Ctrl+E / End      | End of line                             |
+| Ctrl+L            | Force screen refresh                    |
+| Tab               | Insert 4 spaces                         |
+| Enter             | New line (continues list if applicable) |
+| Page Up/Down      | Scroll by page                          |
+| Arrow keys        | Navigate                                |
+| Escape            | Clear search highlighting               |
 
 ### Preview Mode
 
 ![Preview mode](images/preview-mode.png)
-*Preview mode: read-only rendered view with hidden syntax markers*
+*Preview mode: read-only rendered view*
 
-| Key               | Action                          |
-|-------------------|---------------------------------|
-| Ctrl+P / q / Esc  | Return to edit mode             |
-| Ctrl+W            | Toggle word wrap                |
-| j / k / Arrows    | Scroll up / down                |
-| Space / Page Down | Scroll down by page             |
-| Page Up           | Scroll up by page               |
-| g / Home          | Jump to top                     |
-| G / End           | Jump to bottom                  |
-| Ctrl+Q            | Quit                            |
+| Key                   | Action               |
+|-----------------------|----------------------|
+| Ctrl+P / q / Escape   | Return to edit mode  |
+| Ctrl+W                | Toggle word wrap     |
+| j / k / Arrows        | Scroll line by line  |
+| Space / Page Down     | Scroll down by page  |
+| Page Up               | Scroll up by page    |
+| g / Home              | Jump to top          |
+| G / End               | Jump to bottom       |
+| Ctrl+Q                | Quit                 |
 
 ## Supported Markdown
 
-| Element          | Syntax                  | Rendering                        |
-|------------------|-------------------------|----------------------------------|
-| Headings         | `# H1` through `###### H6` | Bold + colour per level      |
-| Bold             | `**text**`              | Terminal bold                    |
-| Italic           | `*text*`                | Terminal italic                  |
-| Bold + Italic    | `***text***`            | Bold + italic                    |
-| Strikethrough    | `~~text~~`              | Dimmed text                      |
-| Inline code      | `` `code` ``            | Yellow / code colour             |
-| Code blocks      | Fenced with `` ``` ``   | Green / code-block colour        |
-| Links            | `[text](url)`           | Underlined text, dimmed URL      |
-| Images           | `![alt](url)`           | Same as links                    |
-| Unordered lists  | `- item` / `* item`     | Coloured bullet                  |
-| Ordered lists    | `1. item`               | Coloured number                  |
-| Blockquotes      | `> text`                | Cyan with bold `>`               |
-| Horizontal rules | `---` / `***` / `___`   | Dimmed rule line                 |
+| Element          | Syntax                          | Notes                          |
+|------------------|---------------------------------|--------------------------------|
+| Headings         | `# H1` through `###### H6`     | Bold, coloured per level       |
+| Bold             | `**text**`                      |                                |
+| Italic           | `*text*`                        |                                |
+| Bold + italic    | `***text***`                    |                                |
+| Strikethrough    | `~~text~~`                      | Rendered dimmed                |
+| Inline code      | `` `code` ``                    |                                |
+| Code blocks      | Fenced with `` ``` ``           |                                |
+| Links            | `[text](url)`                   | Text underlined, URL dimmed    |
+| Images           | `![alt](url)`                   | Same as links                  |
+| Unordered lists  | `- item`, `* item`, `+ item`    | Autocompletion on Enter        |
+| Ordered lists    | `1. item`, `1) item`            | Auto-increments on Enter       |
+| Blockquotes      | `> text`                        |                                |
+| Horizontal rules | `---`, `***`, `___`             |                                |
+| Tables           | GFM pipe syntax                 | Box-drawing borders in preview |
 
 ## Architecture
 
 ```
 src/
-  main.c      — entry point & argument handling
-  editor.h/c  — editor state, event loop, key handling, file I/O, search
-  buffer.h/c  — line-based text buffer (dynamic array of lines)
-  render.h/c  — markdown parser & ncurses styled output
+  main.c        — entry point: locale init, constructs Editor, opens file, runs event loop
+  editor.h/c    — Editor struct, event loop, key dispatch, file I/O, search, mode switching
+  buffer.h/c    — line-based text buffer; dynamic array of heap-allocated lines
+  render.h/c    — markdown parser and ncurses output for edit mode; generates PreviewBuffer
+  undo.h/c      — append-only undo stack; sequence numbers group per-keystroke operations
+  search.h/c    — incremental search with match tracking
+  utf8.h/c      — UTF-8 character boundary helpers
+  preview_ui.h  — preview and help mode rendering
 ```
 
-The text buffer stores the document as a dynamic array of individually allocated
-lines. The render engine does a multi-pass analysis of each visible line:
-inline code spans first, then emphasis (bold/italic), strikethrough, and links.
-Block-level elements (headings, lists, quotes, code blocks) are detected and
-styled separately.
+Files are saved as standard `.md`; the editor never writes rendered output.
 
 ## License
 
