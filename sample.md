@@ -34,6 +34,17 @@ Lists support multiple bullet styles:
 
 ---
 
+## Todo items
+
+Task lists use GFM-style checkboxes:
+
+- [ ] Open task
+- [x] Completed task
+- [ ] Task with metadata @alice #feature ~2d 2026-03-10
+- [x] Released ~1w #done
+
+---
+
 ## Blockquotes
 
 > Blockquotes are rendered in a distinct colour.
