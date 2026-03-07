@@ -257,8 +257,61 @@ static void editor_insert_char(Editor *ed, int c)
     ed->dirty++;
 }
 
+static int list_next_prefix(const char *line, char *out, int out_size)
+{
+    int i = 0;
+    while (line[i] == ' ') i++;
+    int indent = i;
+
+    /* Unordered: - item, * item, + item */
+    if ((line[i] == '-' || line[i] == '*' || line[i] == '+') && line[i + 1] == ' ') {
+        int plen = indent + 2;
+        if (plen >= out_size) return 0;
+        memcpy(out, line, indent);
+        out[indent]     = line[i];
+        out[indent + 1] = ' ';
+        return plen;
+    }
+
+    /* Ordered: 1. item, 1) item */
+    if (isdigit((unsigned char)line[i])) {
+        int j = i, num = 0;
+        while (isdigit((unsigned char)line[j])) { num = num * 10 + (line[j] - '0'); j++; }
+        char delim = line[j];
+        if ((delim == '.' || delim == ')') && line[j + 1] == ' ') {
+            char numbuf[24];
+            int nlen = snprintf(numbuf, sizeof(numbuf), "%d%c ", num + 1, delim);
+            int plen = indent + nlen;
+            if (plen >= out_size) return 0;
+            memcpy(out, line, indent);
+            memcpy(out + indent, numbuf, nlen);
+            return plen;
+        }
+    }
+
+    return 0;
+}
+
 static void editor_insert_newline(Editor *ed)
 {
+    const char *cur = buffer_line_data(&ed->buf, ed->cy);
+    char prefix[64];
+    int plen = list_next_prefix(cur, prefix, sizeof(prefix));
+
+    /* Empty list item: exit list mode by deleting the prefix, no newline */
+    if (plen > 0 && buffer_line_len(&ed->buf, ed->cy) <= plen) {
+        int cur_plen = buffer_line_len(&ed->buf, ed->cy);
+        const char *line = buffer_line_data(&ed->buf, ed->cy);
+        undo_push(&ed->undo, UNDO_DELETE, ed->cy, 0,
+                  line, cur_plen, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
+        for (int i = 0; i < cur_plen; i++)
+            buffer_delete_forward(&ed->buf, ed->cy, 0);
+        ed->cx = 0;
+        ed->dirty++;
+        return;
+    }
+
     undo_push(&ed->undo, UNDO_SPLIT, ed->cy, ed->cx,
               NULL, 0, ed->cx, ed->cy, ed->undo_seq);
     undo_stack_clear(&ed->redo);
@@ -266,6 +319,15 @@ static void editor_insert_newline(Editor *ed)
     ed->cy++;
     ed->cx = 0;
     ed->dirty++;
+
+    /* Insert list prefix on new line (same undo_seq = undoes with the newline) */
+    for (int i = 0; i < plen; i++) {
+        char ch = prefix[i];
+        undo_push(&ed->undo, UNDO_INSERT, ed->cy, ed->cx,
+                  &ch, 1, ed->cx, ed->cy, ed->undo_seq);
+        buffer_insert_char(&ed->buf, ed->cy, ed->cx, (unsigned char)ch);
+        ed->cx++;
+    }
 }
 
 static void editor_delete_backward(Editor *ed)
