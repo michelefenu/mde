@@ -22,6 +22,9 @@ enum {
     CP_HRULE,
     CP_SEARCH_HL,
     CP_MSGBAR,
+    CP_TODO_OPEN,   /* open checkbox [ ] */
+    CP_TODO_DONE,   /* completed task [x] */
+    CP_TODO_META,   /* metadata: ~dur #tag @name date */
 };
 
 /* Block-level element types */
