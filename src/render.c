@@ -612,12 +612,55 @@ void render_draw_line(int screen_y, int screen_cols,
  *  Word-wrap helpers
  * ================================================================ */
 
+/* Returns the end byte (exclusive) for the current wrapped row.
+   Sets *next_start to where the next row begins (past the break space).
+   Falls back to mid-word break if no space fits in cols_avail. */
+static int find_word_break(const char *text, int start, int len,
+                            int cols_avail, int *next_start)
+{
+    int col = 0, last_space = -1, i = start;
+    while (i < len) {
+        if (text[i] == ' ') last_space = i;
+        int clen = utf8_clen((unsigned char)text[i]);
+        if (i + clen > len) clen = len - i;
+        if (col >= cols_avail) {
+            if (last_space > start) { *next_start = last_space + 1; return last_space; }
+            *next_start = i; return i;  /* forced break */
+        }
+        col++;
+        i += clen;
+    }
+    *next_start = len;
+    return len;
+}
+
 int render_wrap_height(const char *text, int len, int cols)
 {
     if (cols <= 0) return 1;
-    int dw = render_byte_to_col(text, len, len);
-    if (dw == 0) return 1;
-    return (dw + cols - 1) / cols;
+    int rows = 0, i = 0;
+    do {
+        int next;
+        find_word_break(text, i, len, cols, &next);
+        rows++; i = next;
+    } while (i < len);
+    return rows;
+}
+
+void render_wrap_cursor_pos(const char *text, int len, int cols, int cx,
+                             int *out_row, int *out_col)
+{
+    int row = 0, i = 0;
+    do {
+        int next, end = find_word_break(text, i, len, cols, &next);
+        if (cx <= end || next >= len) {
+            *out_row = row;
+            *out_col = render_byte_to_col(text, len, cx)
+                     - render_byte_to_col(text, len, i);
+            return;
+        }
+        i = next; row++;
+    } while (i < len);
+    *out_row = row; *out_col = 0;
 }
 
 int render_draw_line_wrapped(int screen_y, int screen_cols,
@@ -628,38 +671,32 @@ int render_draw_line_wrapped(int screen_y, int screen_cols,
     CharStyle *styles = calloc(len + 1, sizeof(CharStyle));
     compute_styles(text, len, styles, btype, hlevel);
 
-    int row = 0;      /* current wrapped sub-row */
-    int col = 0;      /* current column within sub-row */
-    int i   = 0;      /* byte offset into text */
+    int row = 0;
+    int i   = 0;
 
-    move(screen_y, 0);
-    clrtoeol();
+    do {
+        int next, end = find_word_break(text, i, len, screen_cols, &next);
+        move(screen_y + row, 0);
+        clrtoeol();
 
-    while (i < len && row < max_rows) {
-        attr_t a = COLOR_PAIR(styles[i].cpair) | styles[i].attr;
-        int clen = utf8_clen((unsigned char)text[i]);
-        if (i + clen > len) clen = len - i;
-
-        /* If this character would exceed the screen width, wrap */
-        if (col >= screen_cols) {
-            row++;
-            col = 0;
-            if (row >= max_rows) break;
-            move(screen_y + row, 0);
-            clrtoeol();
+        /* draw segment [i, end) character by character with styles */
+        int j = i;
+        while (j < end) {
+            attr_t a = COLOR_PAIR(styles[j].cpair) | styles[j].attr;
+            int clen = utf8_clen((unsigned char)text[j]);
+            if (j + clen > end) clen = end - j;
+            attron(a);
+            addnstr(text + j, clen);
+            attroff(a);
+            j += clen;
         }
 
-        attron(a);
-        addnstr(text + i, clen);
-        attroff(a);
+        i = next;
+        row++;
+    } while (i < len && row < max_rows);
 
-        i += clen;
-        col++;
-    }
-
-    /* If nothing was drawn (empty line), we still used 1 row */
     free(styles);
-    return (row < max_rows) ? row + 1 : max_rows;
+    return (row < max_rows) ? row : max_rows;
 }
 
 /* ================================================================
@@ -1260,83 +1297,117 @@ void preview_draw_line(int screen_y, int screen_cols,
     }
 }
 
-/* Count display columns (characters) in a PreviewLine */
-static int preview_display_width(PreviewLine *pl)
+
+/* Same logic as find_word_break but for PreviewLine (never break on ACS markers). */
+static int find_preview_word_break(PreviewLine *pl, int start,
+                                    int cols_avail, int *next_start)
 {
-    int col = 0;
-    int i = 0;
+    int col = 0, last_space = -1, i = start;
     while (i < pl->len) {
-        if (pl->styles[i].acs) {
-            i++;
-        } else {
-            int clen = utf8_clen((unsigned char)pl->text[i]);
-            if (i + clen > pl->len) clen = pl->len - i;
-            i += clen;
+        if (!pl->styles[i].acs && pl->text[i] == ' ') last_space = i;
+        int clen = pl->styles[i].acs ? 1
+                 : utf8_clen((unsigned char)pl->text[i]);
+        if (i + clen > pl->len) clen = pl->len - i;
+        if (col >= cols_avail) {
+            if (last_space > start) { *next_start = last_space + 1; return last_space; }
+            *next_start = i; return i;
         }
         col++;
+        i += clen;
     }
-    return col;
+    *next_start = pl->len;
+    return pl->len;
+}
+
+/* Count leading indent spaces for hanging-indent in preview mode. */
+static int preview_leading_indent(PreviewLine *pl)
+{
+    int indent = 0;
+    while (indent < pl->len && !pl->styles[indent].acs && pl->text[indent] == ' ')
+        indent++;
+    return indent;
 }
 
 int preview_wrap_height(PreviewLine *pl, int cols)
 {
     if (cols <= 0) return 1;
-    int dw = preview_display_width(pl);
-    if (dw == 0) return 1;
-    return (dw + cols - 1) / cols;
+    int indent = preview_leading_indent(pl);
+    if (indent >= cols / 2) indent = 0;
+    int rows = 0, i = 0;
+    do {
+        int avail = (rows == 0) ? cols : cols - indent;
+        if (avail <= 0) avail = 1;
+        int next;
+        find_preview_word_break(pl, i, avail, &next);
+        rows++; i = next;
+    } while (i < pl->len);
+    return rows;
+}
+
+/* Draw one ACS character with its style. */
+static void draw_acs_char(unsigned char acs_id, attr_t a)
+{
+    chtype acs;
+    switch (acs_id) {
+    case PM_VLINE:    acs = ACS_VLINE;    break;
+    case PM_HLINE:    acs = ACS_HLINE;    break;
+    case PM_ULCORNER: acs = ACS_ULCORNER; break;
+    case PM_URCORNER: acs = ACS_URCORNER; break;
+    case PM_LLCORNER: acs = ACS_LLCORNER; break;
+    case PM_LRCORNER: acs = ACS_LRCORNER; break;
+    case PM_LTEE:     acs = ACS_LTEE;     break;
+    case PM_RTEE:     acs = ACS_RTEE;     break;
+    case PM_TTEE:     acs = ACS_TTEE;     break;
+    case PM_BTEE:     acs = ACS_BTEE;     break;
+    case PM_PLUS:     acs = ACS_PLUS;     break;
+    case PM_BULLET:   acs = ACS_BULLET;   break;
+    default:          acs = '?';           break;
+    }
+    addch(acs | a);
 }
 
 int preview_draw_line_wrapped(int screen_y, int screen_cols,
                               PreviewLine *pl, int max_rows)
 {
+    int indent = preview_leading_indent(pl);
+    if (indent >= screen_cols / 2) indent = 0;
+
     int row = 0;
-    int col = 0;
     int i   = 0;
 
-    move(screen_y, 0);
-    clrtoeol();
+    do {
+        int avail = (row == 0) ? screen_cols : screen_cols - indent;
+        if (avail <= 0) avail = 1;
+        int next, end = find_preview_word_break(pl, i, avail, &next);
 
-    while (i < pl->len && row < max_rows) {
-        if (col >= screen_cols) {
-            row++;
-            col = 0;
-            if (row >= max_rows) break;
-            move(screen_y + row, 0);
-            clrtoeol();
-        }
+        move(screen_y + row, 0);
+        clrtoeol();
 
-        attr_t a = COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr;
-        if (pl->styles[i].acs) {
-            chtype acs;
-            switch (pl->styles[i].acs) {
-            case PM_VLINE:    acs = ACS_VLINE;    break;
-            case PM_HLINE:    acs = ACS_HLINE;    break;
-            case PM_ULCORNER: acs = ACS_ULCORNER; break;
-            case PM_URCORNER: acs = ACS_URCORNER; break;
-            case PM_LLCORNER: acs = ACS_LLCORNER; break;
-            case PM_LRCORNER: acs = ACS_LRCORNER; break;
-            case PM_LTEE:     acs = ACS_LTEE;     break;
-            case PM_RTEE:     acs = ACS_RTEE;     break;
-            case PM_TTEE:     acs = ACS_TTEE;     break;
-            case PM_BTEE:     acs = ACS_BTEE;     break;
-            case PM_PLUS:     acs = ACS_PLUS;     break;
-            case PM_BULLET:   acs = ACS_BULLET;   break;
-            default:          acs = '?';           break;
+        if (row > 0 && indent > 0)
+            for (int k = 0; k < indent; k++) addch(' ');
+
+        /* draw segment [i, end) */
+        int j = i;
+        while (j < end) {
+            attr_t a = COLOR_PAIR(pl->styles[j].cpair) | pl->styles[j].attr;
+            if (pl->styles[j].acs) {
+                draw_acs_char(pl->styles[j].acs, a);
+                j++;
+            } else {
+                int clen = utf8_clen((unsigned char)pl->text[j]);
+                if (j + clen > end) clen = end - j;
+                attron(a);
+                addnstr(pl->text + j, clen);
+                attroff(a);
+                j += clen;
             }
-            addch(acs | a);
-            i++;
-        } else {
-            int clen = utf8_clen((unsigned char)pl->text[i]);
-            if (i + clen > pl->len) clen = pl->len - i;
-            attron(a);
-            addnstr(pl->text + i, clen);
-            attroff(a);
-            i += clen;
         }
-        col++;
-    }
 
-    return (row < max_rows) ? row + 1 : max_rows;
+        i = next;
+        row++;
+    } while (i < pl->len && row < max_rows);
+
+    return (row < max_rows) ? row : max_rows;
 }
 
 int preview_find_line(PreviewBuffer *pb, int buffer_row)

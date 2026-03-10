@@ -158,9 +158,10 @@ static void editor_scroll(Editor *ed)
             /* Add cursor's sub-line within its own line */
             const char *cl = buffer_line_data(&ed->buf, ed->cy);
             int cl_len = buffer_line_len(&ed->buf, ed->cy);
-            int cx_col = render_byte_to_col(cl, cl_len, ed->cx);
-            int sub = (ed->screen_cols > 0) ? cx_col / ed->screen_cols : 0;
-            vis_y += sub;
+            int sub_row, sub_col;
+            render_wrap_cursor_pos(cl, cl_len, ed->screen_cols, ed->cx,
+                                   &sub_row, &sub_col);
+            vis_y += sub_row;
 
             if (vis_y >= ed->screen_rows) {
                 ed->scroll_y++;
@@ -790,9 +791,9 @@ void editor_refresh_screen(Editor *ed)
         /* Place cursor accounting for wrapped lines */
         const char *line = buffer_line_data(&ed->buf, ed->cy);
         int line_len = buffer_line_len(&ed->buf, ed->cy);
-        int cx_col = render_byte_to_col(line, line_len, ed->cx);
-        int wrap_row = (ed->screen_cols > 0) ? cx_col / ed->screen_cols : 0;
-        int wrap_col = (ed->screen_cols > 0) ? cx_col % ed->screen_cols : 0;
+        int wrap_row, wrap_col;
+        render_wrap_cursor_pos(line, line_len, ed->screen_cols, ed->cx,
+                               &wrap_row, &wrap_col);
 
         int vis_y = 0;
         for (int r = ed->scroll_y; r < ed->cy; r++)
