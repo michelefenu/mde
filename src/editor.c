@@ -987,6 +987,7 @@ void editor_init(Editor *ed)
     undo_stack_init(&ed->undo);
     undo_stack_init(&ed->redo);
     ed->quit_times = MDE_QUIT_TIMES;
+    ed->word_wrap = 1;
 }
 
 void editor_free(Editor *ed)

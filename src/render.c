@@ -1328,9 +1328,18 @@ static int preview_leading_indent(PreviewLine *pl)
     return indent;
 }
 
+/* Returns 1 if the line contains any ACS box-drawing character (table line). */
+static int preview_line_is_table(PreviewLine *pl)
+{
+    for (int i = 0; i < pl->len; i++)
+        if (pl->styles[i].acs) return 1;
+    return 0;
+}
+
 int preview_wrap_height(PreviewLine *pl, int cols)
 {
     if (cols <= 0) return 1;
+    if (preview_line_is_table(pl)) return 1;
     int indent = preview_leading_indent(pl);
     if (indent >= cols / 2) indent = 0;
     int rows = 0, i = 0;
@@ -1369,6 +1378,12 @@ static void draw_acs_char(unsigned char acs_id, attr_t a)
 int preview_draw_line_wrapped(int screen_y, int screen_cols,
                               PreviewLine *pl, int max_rows)
 {
+    /* Table lines contain ACS box-drawing chars — never word-wrap them */
+    if (preview_line_is_table(pl)) {
+        preview_draw_line(screen_y, screen_cols, pl, 0);
+        return 1;
+    }
+
     int indent = preview_leading_indent(pl);
     if (indent >= screen_cols / 2) indent = 0;
 
