@@ -46,6 +46,12 @@ typedef struct {
     int           help_was_preview; /* 1 if help was entered from preview mode */
     PreviewBuffer help_buf;
     int           help_scroll_y;
+    /* TOC mode */
+    int           toc_mode;
+    int           toc_was_preview; /* 1 if TOC was opened from preview mode */
+    int           toc_selected;    /* Index of highlighted TOC entry */
+    int           toc_scroll_y;    /* First visible TOC line */
+    PreviewBuffer toc_buf;
 } Editor;
 
 void editor_init(Editor *ed);

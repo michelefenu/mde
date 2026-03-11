@@ -1,5 +1,6 @@
 #include "preview_ui.h"
 #include "help.h"
+#include "toc.h"
 #include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,6 +182,10 @@ void editor_preview_process_key(Editor *ed, int c)
 
     case KEY_F(1):
         editor_show_help(ed);
+        break;
+
+    case CTRL_KEY('t'):
+        editor_show_toc(ed);
         break;
 
     case 'o':

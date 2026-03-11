@@ -13,6 +13,7 @@ A terminal-based markdown editor written in C. Edit and preview markdown files w
 - **Todo items**: GFM-style task checkboxes (`- [ ]` open, `- [x]` done) with coloured styling; metadata tokens highlighted — `#tag`, `@assignee`, `~duration`, and `yyyy-mm-dd` dates
 - **List autocompletion**: pressing Enter on a list item starts the next item automatically — `- `, `* `, `+ ` for unordered; incremented numbers for ordered (`1.` → `2.`, `1)` → `2)`) with indentation preserved; pressing Enter on an empty list item exits the list
 - **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and preview mode
+- **Table of Contents**: Ctrl+T opens a navigable TOC panel listing all headings; press j/k to navigate, Enter to jump to the selected heading
 - **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match
 - **Undo/redo**: full undo history with Ctrl+Z / Ctrl+Y; operations like list continuation undo atomically
 - **Status bar**: filename, cursor position, line count, dirty indicator

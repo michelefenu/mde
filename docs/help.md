@@ -19,6 +19,7 @@ line count, and an unsaved-change indicator. Markdown delimiters (`#`, `*`,
 | Ctrl+N         | Find next match                 |
 | Ctrl+G         | Go to line number               |
 | Ctrl+P         | Toggle preview mode             |
+| Ctrl+T         | Open Table of Contents          |
 | Ctrl+W         | Toggle word wrap                |
 | Ctrl+K         | Delete to end of line           |
 | Ctrl+A         | Move to beginning of line       |
@@ -45,10 +46,23 @@ Preview mode shows a read-only rendered view with syntax markers hidden. Word wr
 | g / Home         | Jump to top                   |
 | G / End          | Jump to bottom                |
 | o                | Open a link in web browser   |
+| Ctrl+T           | Open Table of Contents        |
 | Ctrl+W           | Toggle word wrap              |
 | q / Esc / Ctrl+P | Return to edit mode           |
 | Ctrl+Q           | Quit                          |
 | F1               | Show this help                |
+
+## TOC MODE
+
+TOC mode shows a navigable Table of Contents listing all headings in the document. Open it with Ctrl+T from edit or preview mode. Pressing Enter jumps to the selected heading (in preview mode the preview scrolls to it; in edit mode the heading moves to the top of the screen).
+
+| Key      | Action                              |
+|----------|-------------------------------------|
+| j / Down | Move selection down                 |
+| k / Up   | Move selection up                   |
+| Enter    | Jump cursor to heading, close TOC   |
+| q / Esc  | Close TOC without jumping           |
+| Ctrl+Q   | Quit                                |
 
 ## SUPPORTED MARKDOWN
 

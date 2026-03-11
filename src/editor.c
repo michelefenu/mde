@@ -4,6 +4,7 @@
 #include "search.h"
 #include "help.h"
 #include "preview_ui.h"
+#include "toc.h"
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -685,6 +686,22 @@ static void editor_draw_help_rows(Editor *ed)
     }
 }
 
+static void editor_draw_toc_rows(Editor *ed)
+{
+    for (int y = 0; y < ed->screen_rows; y++) {
+        int prow = ed->toc_scroll_y + y;
+        if (prow < ed->toc_buf.num_lines) {
+            preview_draw_line(y, ed->screen_cols,
+                              &ed->toc_buf.lines[prow], 0);
+            if (prow == ed->toc_selected)
+                mvchgat(y, 0, -1, A_REVERSE, 0, NULL);
+        } else {
+            move(y, 0);
+            clrtoeol();
+        }
+    }
+}
+
 static void editor_draw_statusbar(Editor *ed)
 {
     int y = ed->screen_rows;
@@ -695,7 +712,13 @@ static void editor_draw_statusbar(Editor *ed)
     char left[256], right[128];
     int llen, rlen;
 
-    if (ed->help_mode) {
+    if (ed->toc_mode) {
+        int n = ed->toc_buf.num_lines;
+        llen = snprintf(left, sizeof(left), " [TOC] %d heading%s",
+                        n, n == 1 ? "" : "s");
+        rlen = snprintf(right, sizeof(right), "%d/%d ",
+                        ed->toc_selected + 1, n);
+    } else if (ed->help_mode) {
         llen = snprintf(left, sizeof(left), " [HELP]");
         int max_s = help_max_scroll(ed);
         int pct = (max_s > 0) ? (ed->help_scroll_y * 100 / max_s) : 100;
@@ -747,15 +770,17 @@ static void editor_draw_statusbar(Editor *ed)
         attroff(A_BOLD);
     } else {
         const char *help;
-        if (ed->help_mode)
+        if (ed->toc_mode)
+            help = "j/k Navigate | Enter Jump | q/Esc Close";
+        else if (ed->help_mode)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
                    "q/Esc Close";
         else if (ed->preview_mode)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | o Open Link | "
-                   "F1 Help | q/Esc/Ctrl+P Edit";
+                   "Ctrl+T TOC | F1 Help | q/Esc/Ctrl+P Edit";
         else
             help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+Z Undo | Ctrl+Y Redo | "
-                   "Ctrl+F Search | Ctrl+P Preview | F1 Help";
+                   "Ctrl+F Search | Ctrl+P Preview | Ctrl+T TOC | F1 Help";
         attron(A_DIM);
         int hl = (int)strlen(help);
         if (hl > ed->screen_cols) hl = ed->screen_cols;
@@ -771,7 +796,10 @@ void editor_refresh_screen(Editor *ed)
     ed->screen_rows -= 2;          /* status bar + message line */
     if (ed->screen_rows < 1) ed->screen_rows = 1;
 
-    if (ed->help_mode) {
+    if (ed->toc_mode) {
+        toc_clamp_scroll(ed);
+        editor_draw_toc_rows(ed);
+    } else if (ed->help_mode) {
         clamp_help_scroll(ed);
         editor_draw_help_rows(ed);
     } else if (ed->preview_mode) {
@@ -784,8 +812,8 @@ void editor_refresh_screen(Editor *ed)
 
     editor_draw_statusbar(ed);
 
-    if (ed->help_mode || ed->preview_mode) {
-        /* Hide cursor in preview / help */
+    if (ed->toc_mode || ed->help_mode || ed->preview_mode) {
+        /* Hide cursor in TOC / preview / help */
         move(ed->screen_rows, 0);
     } else if (ed->word_wrap) {
         /* Place cursor accounting for wrapped lines */
@@ -825,6 +853,12 @@ static void editor_process_key(Editor *ed)
     char utf8[4];
     int  utf8_len;
     int  c = editor_read_key(utf8, &utf8_len);
+
+    /* TOC mode has its own key handler */
+    if (ed->toc_mode) {
+        editor_toc_process_key(ed, c);
+        return;
+    }
 
     /* Help mode has its own key handler */
     if (ed->help_mode) {
@@ -879,6 +913,11 @@ static void editor_process_key(Editor *ed)
     /* ── Preview ── */
     case CTRL_KEY('p'):
         editor_toggle_preview(ed);
+        break;
+
+    /* ── Table of Contents ── */
+    case CTRL_KEY('t'):
+        editor_show_toc(ed);
         break;
 
     /* ── Word wrap toggle ── */
@@ -995,6 +1034,7 @@ void editor_free(Editor *ed)
     buffer_free(&ed->buf);
     preview_free(&ed->preview_buf);
     preview_free(&ed->help_buf);
+    preview_free(&ed->toc_buf);
     undo_stack_free(&ed->undo);
     undo_stack_free(&ed->redo);
     free(ed->filename);
