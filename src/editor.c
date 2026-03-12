@@ -81,7 +81,7 @@ void editor_set_status(Editor *ed, const char *fmt, ...)
  * ================================================================ */
 
 char *editor_prompt(Editor *ed, const char *prompt_str,
-                    PromptCallback cb)
+                    PromptCallback cb, TabCompleteFunc tab_fn)
 {
     char buf[256];
     int  buflen = 0;
@@ -118,6 +118,9 @@ char *editor_prompt(Editor *ed, const char *prompt_str,
 
         if (c == KEY_BACKSPACE || c == 127 || c == CTRL_KEY('h')) {
             if (buflen > 0) buf[--buflen] = '\0';
+        } else if (c == '\t' && tab_fn) {
+            buflen = tab_fn(buf, buflen, (int)sizeof(buf) - 1);
+            buf[buflen] = '\0';
         } else if (c == KEY_UTF8 && buflen < (int)sizeof(buf) - 5) {
             for (int i = 0; i < utf8_len && buflen < (int)sizeof(buf) - 1; i++)
                 buf[buflen++] = utf8[i];
@@ -524,7 +527,7 @@ void editor_open(Editor *ed, const char *filename)
 void editor_save(Editor *ed)
 {
     if (!ed->filename) {
-        char *name = editor_prompt(ed, "Save as: ", NULL);
+        char *name = editor_prompt(ed, "Save as: ", NULL, NULL);
         if (!name) {
             editor_set_status(ed, "Save cancelled.");
             return;

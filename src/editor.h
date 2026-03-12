@@ -61,7 +61,9 @@ void editor_run(Editor *ed);
 
 /* Internal API used by sub-modules (search, help, preview_ui, command) */
 typedef void (*PromptCallback)(Editor *ed, const char *input, int key);
-char *editor_prompt(Editor *ed, const char *prompt_str, PromptCallback cb);
+typedef int  (*TabCompleteFunc)(char *buf, int buflen, int maxlen);
+char *editor_prompt(Editor *ed, const char *prompt_str, PromptCallback cb,
+                    TabCompleteFunc tab_fn);
 void  editor_set_status(Editor *ed, const char *fmt, ...);
 void  editor_refresh_screen(Editor *ed);
 void  editor_save(Editor *ed);

@@ -52,7 +52,7 @@ void editor_search(Editor *ed)
     ed->search_saved_cy       = ed->cy;
     ed->search_saved_scroll_y = ed->scroll_y;
 
-    char *q = editor_prompt(ed, "Search (Esc = cancel): ", search_callback);
+    char *q = editor_prompt(ed, "Search (Esc = cancel): ", search_callback, NULL);
     if (q) {
         strncpy(ed->search_query, q, sizeof(ed->search_query) - 1);
         ed->search_query[sizeof(ed->search_query) - 1] = '\0';
@@ -122,7 +122,7 @@ void editor_search_prev(Editor *ed)
 
 void editor_goto_line(Editor *ed)
 {
-    char *input = editor_prompt(ed, "Go to line: ", NULL);
+    char *input = editor_prompt(ed, "Go to line: ", NULL, NULL);
     if (!input) return;
 
     int line = atoi(input);
