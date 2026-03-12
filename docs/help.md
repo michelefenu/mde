@@ -12,9 +12,9 @@ Normal mode shows a read-only rendered view of the document with syntax markers 
 |------------------|---------------------------------|
 | i / a            | Enter insert mode               |
 | o                | Open new line below, enter insert mode |
-| /                | Search (enters insert mode at match) |
-| n                | Find next match (enters insert mode) |
-| N                | Find previous match (enters insert mode) |
+| /                | Search (highlights matches in preview) |
+| n                | Find next match (scrolls preview)    |
+| N                | Find previous match (scrolls preview) |
 | :                | Enter command mode              |
 | u                | Undo                            |
 | Ctrl+R           | Redo                            |

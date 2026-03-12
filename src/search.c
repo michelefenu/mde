@@ -1,4 +1,5 @@
 #include "search.h"
+#include "preview_ui.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -35,6 +36,11 @@ static void search_callback(Editor *ed, const char *query, int key)
         if (match) {
             ed->cy = row;
             ed->cx = (int)(match - line);
+            if (ed->preview_mode) {
+                ed->preview_scroll_y = preview_find_line(
+                    &ed->preview_buf, ed->cy);
+                clamp_preview_scroll(ed);
+            }
             return;
         }
     }

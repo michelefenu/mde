@@ -78,8 +78,9 @@ void editor_preview_process_key(Editor *ed, int c)
 
     /* ── Search ── */
     case '/':
-        editor_toggle_preview(ed);
         editor_search(ed);
+        ed->preview_scroll_y = preview_find_line(&ed->preview_buf, ed->cy);
+        clamp_preview_scroll(ed);
         break;
 
     case 'n':
@@ -87,8 +88,9 @@ void editor_preview_process_key(Editor *ed, int c)
             editor_set_status(ed, "No search query");
             break;
         }
-        editor_toggle_preview(ed);
         editor_search_next(ed);
+        ed->preview_scroll_y = preview_find_line(&ed->preview_buf, ed->cy);
+        clamp_preview_scroll(ed);
         break;
 
     case 'N':
@@ -96,8 +98,9 @@ void editor_preview_process_key(Editor *ed, int c)
             editor_set_status(ed, "No search query");
             break;
         }
-        editor_toggle_preview(ed);
         editor_search_prev(ed);
+        ed->preview_scroll_y = preview_find_line(&ed->preview_buf, ed->cy);
+        clamp_preview_scroll(ed);
         break;
 
     /* ── Command mode ── */

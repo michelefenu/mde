@@ -632,6 +632,12 @@ static void editor_draw_preview_rows(Editor *ed)
             int used = preview_draw_line_wrapped(y, ed->screen_cols,
                                                  &ed->preview_buf.lines[prow],
                                                  remaining);
+            if (ed->search_query_len > 0)
+                preview_highlight_search_wrapped(y, ed->screen_cols,
+                                                 &ed->preview_buf.lines[prow],
+                                                 used,
+                                                 ed->search_query,
+                                                 ed->search_query_len);
             y += used;
             prow++;
         }
@@ -646,6 +652,11 @@ static void editor_draw_preview_rows(Editor *ed)
             if (prow < ed->preview_buf.num_lines) {
                 preview_draw_line(y, ed->screen_cols,
                                   &ed->preview_buf.lines[prow], 0);
+                if (ed->search_query_len > 0)
+                    preview_highlight_search(y, ed->screen_cols,
+                                             &ed->preview_buf.lines[prow], 0,
+                                             ed->search_query,
+                                             ed->search_query_len);
             } else {
                 move(y, 0);
                 clrtoeol();
@@ -770,7 +781,19 @@ static void editor_draw_statusbar(Editor *ed)
         attroff(A_BOLD);
     } else {
         const char *help;
-        if (ed->toc_mode)
+        char search_hint[512];
+        if (ed->search_query_len > 0 && !ed->toc_mode && !ed->help_mode) {
+            if (ed->preview_mode) {
+                snprintf(search_hint, sizeof(search_hint),
+                         "Search: \"%s\"  |  n next  |  N prev  |  / new search",
+                         ed->search_query);
+            } else {
+                snprintf(search_hint, sizeof(search_hint),
+                         "Search: \"%s\"  |  Ctrl+N next  |  Esc Normal (n/N to navigate)",
+                         ed->search_query);
+            }
+            help = search_hint;
+        } else if (ed->toc_mode)
             help = "j/k Navigate | Enter Jump | q/Esc Close";
         else if (ed->help_mode)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "

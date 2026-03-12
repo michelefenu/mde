@@ -1440,3 +1440,215 @@ int preview_find_line(PreviewBuffer *pb, int buffer_row)
             return i;
     return (pb->num_lines > 0) ? pb->num_lines - 1 : 0;
 }
+
+/* ── Search highlighting for preview mode ── */
+
+/* Build a byte-index → screen-column map for a preview line.
+   Caller must free the returned array (length pl->len). */
+static int *preview_build_col_map(PreviewLine *pl, int *total_cols)
+{
+    int *col_map = malloc(pl->len * sizeof(int));
+    if (!col_map) return NULL;
+    int col = 0;
+    for (int i = 0; i < pl->len; ) {
+        col_map[i] = col;
+        if (pl->styles[i].acs) {
+            col++;
+            i++;
+        } else {
+            int w = utf8_char_width(pl->text, pl->len, i);
+            int clen = utf8_clen((unsigned char)pl->text[i]);
+            if (i + clen > pl->len) clen = pl->len - i;
+            for (int k = 1; k < clen && i + k < pl->len; k++)
+                col_map[i + k] = col;
+            col += w;
+            i += clen;
+        }
+    }
+    if (total_cols) *total_cols = col;
+    return col_map;
+}
+
+/* Compute display-column width of a byte range [byte_off, byte_off+blen)
+   using a prebuilt col_map.  total_cols is the column after the last byte. */
+static int preview_match_width(int *col_map, int total_cols,
+                               int byte_off, int blen, int text_len)
+{
+    int start_col = col_map[byte_off];
+    int end_col;
+    int end_byte = byte_off + blen;
+    if (end_byte < text_len)
+        end_col = col_map[end_byte];
+    else
+        end_col = total_cols;
+    return end_col - start_col;
+}
+
+/* Redraw a range of bytes from a preview line at (screen_y, screen_col)
+   with search-highlight attributes, handling ACS and UTF-8. */
+static void preview_redraw_hl(int screen_y, int screen_col, int screen_cols,
+                               PreviewLine *pl, int byte_start, int byte_end)
+{
+    attr_t hl = COLOR_PAIR(CP_SEARCH_HL) | A_BOLD;
+    int col = screen_col;
+    int i = byte_start;
+    while (i < byte_end && col < screen_cols) {
+        if (pl->styles[i].acs) {
+            chtype acs;
+            switch (pl->styles[i].acs) {
+            case PM_VLINE:    acs = ACS_VLINE;    break;
+            case PM_HLINE:    acs = ACS_HLINE;    break;
+            case PM_ULCORNER: acs = ACS_ULCORNER; break;
+            case PM_URCORNER: acs = ACS_URCORNER; break;
+            case PM_LLCORNER: acs = ACS_LLCORNER; break;
+            case PM_LRCORNER: acs = ACS_LRCORNER; break;
+            case PM_LTEE:     acs = ACS_LTEE;     break;
+            case PM_RTEE:     acs = ACS_RTEE;     break;
+            case PM_TTEE:     acs = ACS_TTEE;     break;
+            case PM_BTEE:     acs = ACS_BTEE;     break;
+            case PM_PLUS:     acs = ACS_PLUS;     break;
+            case PM_BULLET:   acs = ACS_BULLET;   break;
+            default:          acs = '?';           break;
+            }
+            mvaddch(screen_y, col, acs | hl);
+            col++;
+            i++;
+        } else {
+            int clen = utf8_clen((unsigned char)pl->text[i]);
+            if (i + clen > pl->len) clen = pl->len - i;
+            if (i + clen > byte_end) clen = byte_end - i;
+            move(screen_y, col);
+            attrset(hl);
+            addnstr(pl->text + i, clen);
+            attrset(A_NORMAL);
+            col += utf8_char_width(pl->text, pl->len, i);
+            i += clen;
+        }
+    }
+}
+
+/* Case-insensitive substring search (like strstr but ignores case). */
+static char *strstr_ci(const char *haystack, const char *needle, int nlen)
+{
+    if (nlen <= 0) return (char *)haystack;
+    for (; *haystack; haystack++) {
+        if (strncasecmp(haystack, needle, nlen) == 0)
+            return (char *)haystack;
+    }
+    return NULL;
+}
+
+/* Apply search highlights on a non-wrapped preview line already drawn at
+   screen_y.  Redraws matched characters with highlight attributes. */
+void preview_highlight_search(int screen_y, int screen_cols,
+                              PreviewLine *pl, int scroll_x,
+                              const char *query, int qlen)
+{
+    if (qlen <= 0 || pl->len == 0) return;
+
+    int total_cols;
+    int *col_map = preview_build_col_map(pl, &total_cols);
+    if (!col_map) return;
+
+    char *p = pl->text;
+    while ((p = strstr_ci(p, query, qlen)) != NULL) {
+        int byte_off = (int)(p - pl->text);
+        if (byte_off + qlen > pl->len) break;
+
+        int sc = col_map[byte_off] - scroll_x;
+        int w  = preview_match_width(col_map, total_cols,
+                                     byte_off, qlen, pl->len);
+        if (sc < 0) { w += sc; sc = 0; }
+        if (w > 0 && sc < screen_cols) {
+            if (sc + w > screen_cols) w = screen_cols - sc;
+            preview_redraw_hl(screen_y, sc, screen_cols,
+                              pl, byte_off, byte_off + qlen);
+        }
+        p++;
+    }
+
+    free(col_map);
+}
+
+/* Apply search highlights on a wrapped preview line that was drawn starting
+   at screen_y, spanning up to max_rows screen rows.  Uses mvchgat. */
+int preview_highlight_search_wrapped(int screen_y, int screen_cols,
+                                     PreviewLine *pl, int max_rows,
+                                     const char *query, int qlen)
+{
+    if (qlen <= 0 || pl->len == 0) return 0;
+    if (preview_line_is_table(pl)) {
+        preview_highlight_search(screen_y, screen_cols, pl, 0, query, qlen);
+        return 1;
+    }
+
+    int indent = preview_leading_indent(pl);
+    if (indent >= screen_cols / 2) indent = 0;
+
+    /* Build byte → (row, col) map */
+    int *row_map = calloc(pl->len, sizeof(int));
+    int *col_map = calloc(pl->len, sizeof(int));
+    if (!row_map || !col_map) { free(row_map); free(col_map); return 0; }
+
+    int row = 0, i = 0;
+    do {
+        int avail = (row == 0) ? screen_cols : screen_cols - indent;
+        if (avail <= 0) avail = 1;
+        int next, end;
+        end = find_preview_word_break(pl, i, avail, &next);
+
+        int pad = (row > 0) ? indent : 0;
+        int col = pad;
+        int j = i;
+        while (j < end) {
+            row_map[j] = row;
+            col_map[j] = col;
+            if (pl->styles[j].acs) {
+                col++;
+                j++;
+            } else {
+                int w = utf8_char_width(pl->text, pl->len, j);
+                int clen = utf8_clen((unsigned char)pl->text[j]);
+                if (j + clen > pl->len) clen = pl->len - j;
+                for (int k = 1; k < clen && j + k < pl->len; k++) {
+                    row_map[j + k] = row;
+                    col_map[j + k] = col;
+                }
+                col += w;
+                j += clen;
+            }
+        }
+
+        i = next;
+        row++;
+    } while (i < pl->len && row < max_rows);
+
+    /* Find and highlight matches by redrawing with highlight attrs */
+    char *p = pl->text;
+    while ((p = strstr_ci(p, query, qlen)) != NULL) {
+        int byte_off = (int)(p - pl->text);
+        if (byte_off + qlen > pl->len) break;
+
+        /* Group consecutive match bytes by screen row */
+        int b = byte_off;
+        while (b < byte_off + qlen && b < pl->len) {
+            int sr = row_map[b];
+            if (sr >= max_rows) { b++; continue; }
+
+            int run_start = b;
+            while (b < byte_off + qlen && b < pl->len && row_map[b] == sr)
+                b++;
+
+            int sc = col_map[run_start];
+            if (sc >= 0 && sc < screen_cols) {
+                preview_redraw_hl(screen_y + sr, sc, screen_cols,
+                                  pl, run_start, b);
+            }
+        }
+        p++;
+    }
+
+    free(row_map);
+    free(col_map);
+    return row;
+}

@@ -9,12 +9,12 @@ A terminal-based markdown editor written in C. Edit and preview markdown files w
 ## Features
 
 - **Live syntax styling**: headings, bold, italic, strikethrough, inline code, links, lists, blockquotes, code blocks, and horizontal rules are coloured and styled as you type; markdown delimiters are dimmed so the content stays readable
-- **Preview mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders
+- **Preview mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders; vim-style `/` search with highlighted matches and `n`/`N` navigation without leaving preview
 - **Todo items**: GFM-style task checkboxes (`- [ ]` open, `- [x]` done) with coloured styling; metadata tokens highlighted — `#tag`, `@assignee`, `~duration`, and `yyyy-mm-dd` dates
 - **List autocompletion**: pressing Enter on a list item starts the next item automatically — `- `, `* `, `+ ` for unordered; incremented numbers for ordered (`1.` → `2.`, `1)` → `2)`) with indentation preserved; pressing Enter on an empty list item exits the list
 - **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and preview mode
 - **Table of Contents**: Ctrl+T opens a navigable TOC panel listing all headings; press j/k to navigate, Enter to jump to the selected heading
-- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match
+- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match; `/` search in preview mode with `n`/`N` navigation
 - **Undo/redo**: full undo history with Ctrl+Z / Ctrl+Y; operations like list continuation undo atomically
 - **Status bar**: filename, cursor position, line count, dirty indicator
 
@@ -49,16 +49,17 @@ make clean
 
 ## Key Bindings
 
-### Edit Mode
+### Insert Mode
 
 ![Edit mode](images/edit-mode.png)
-*Edit mode: markdown syntax with dimmed delimiters*
+*Insert mode: markdown syntax with dimmed delimiters*
 
 | Key               | Action                                  |
 |-------------------|-----------------------------------------|
+| Escape            | Return to normal mode                   |
 | Ctrl+S            | Save (prompts for filename if new)      |
 | Ctrl+Q            | Quit (confirm if unsaved)               |
-| Ctrl+P            | Switch to preview mode                  |
+| Ctrl+P            | Return to normal mode                   |
 | Ctrl+W            | Toggle word wrap                        |
 | Ctrl+F            | Incremental search                      |
 | Ctrl+N            | Next search match                       |
@@ -73,23 +74,31 @@ make clean
 | Enter             | New line (continues list if applicable) |
 | Page Up/Down      | Scroll by page                          |
 | Arrow keys        | Navigate                                |
-| Escape            | Clear search highlighting               |
 
-### Preview Mode
+### Preview Mode (Normal Mode)
 
 ![Preview mode](images/preview-mode.png)
-*Preview mode: read-only rendered view*
+*Preview mode: read-only rendered view with vim-like keybindings*
 
-| Key                   | Action               |
-|-----------------------|----------------------|
-| Ctrl+P / q / Escape   | Return to edit mode  |
-| Ctrl+W                | Toggle word wrap     |
-| j / k / Arrows        | Scroll line by line  |
-| Space / Page Down     | Scroll down by page  |
-| Page Up               | Scroll up by page    |
-| g / Home              | Jump to top          |
-| G / End               | Jump to bottom       |
-| Ctrl+Q                | Quit                 |
+| Key                   | Action                              |
+|-----------------------|-------------------------------------|
+| i / a                 | Enter insert mode                   |
+| o                     | Open new line below, enter insert   |
+| /                     | Search (highlights matches in preview) |
+| n                     | Jump to next match                  |
+| N                     | Jump to previous match              |
+| :                     | Enter command mode                  |
+| u                     | Undo                                |
+| Ctrl+R                | Redo                                |
+| j / k / Arrows        | Scroll line by line                 |
+| Space / Page Down     | Scroll down by page                 |
+| Page Up               | Scroll up by page                   |
+| g / Home              | Jump to top                         |
+| G / End               | Jump to bottom                      |
+| Ctrl+T                | Open Table of Contents              |
+| Ctrl+W                | Toggle word wrap                    |
+| F1                    | Show help                           |
+| Ctrl+Q                | Quit                                |
 
 ## Supported Markdown
 

@@ -101,6 +101,12 @@ int  preview_wrap_height(PreviewLine *pl, int cols);
 int  preview_draw_line_wrapped(int screen_y, int screen_cols,
                                PreviewLine *pl, int max_rows);
 int  preview_find_line(PreviewBuffer *pb, int buffer_row);
+void preview_highlight_search(int screen_y, int screen_cols,
+                              PreviewLine *pl, int scroll_x,
+                              const char *query, int qlen);
+int  preview_highlight_search_wrapped(int screen_y, int screen_cols,
+                                      PreviewLine *pl, int max_rows,
+                                      const char *query, int qlen);
 
 /* ── PreviewBuffer construction helpers (used by render.c and render_table.c) ── */
 PreviewLine *pv_add(PreviewBuffer *pb, int source_row, int len);
