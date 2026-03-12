@@ -13,10 +13,17 @@ static void toc_generate(PreviewBuffer *pb, Buffer *buf)
     preview_free(pb);
 
     int found = 0;
+    int in_code = 0;
 
     for (int r = 0; r < buf->num_lines; r++) {
         const char *line = buffer_line_data(buf, r);
         int len = buffer_line_len(buf, r);
+
+        if (render_is_code_fence(line)) {
+            in_code = !in_code;
+            continue;
+        }
+        if (in_code) continue;
 
         int level = render_heading_level(line);
         if (level == 0) continue;
