@@ -1,8 +1,8 @@
 # mde
 
-**mde** is a small, terminal-based markdown editor with a vim-like modal interface. It has two modes: **normal mode** (read-only formatted preview) and **insert mode** (raw markdown editing). The editor starts in normal mode. Press `i` to enter insert mode and `Esc` to return to normal mode. Files are always saved as raw markdown (`.md`).
+**mde** is a small, terminal-based markdown editor with two modes: **normal mode** (read-only formatted preview) and **edit mode** (raw markdown editing). The editor starts in normal mode. Press `Ctrl+P` to toggle between modes. Files are always saved as raw markdown (`.md`).
 
-A status bar shows the filename, cursor position, line count, and the current mode indicator (`[NORMAL]` or `[+]` for unsaved changes). Markdown delimiters (`#`, `*`, `` ` ``, etc.) are shown in a muted colour in insert mode so the content stands out.
+A status bar shows the filename, cursor position, line count, and the current mode indicator (`[NORMAL]` or `[+]` for unsaved changes). Markdown delimiters (`#`, `*`, `` ` ``, etc.) are shown in a muted colour in edit mode so the content stands out.
 
 ## NORMAL MODE
 
@@ -10,8 +10,7 @@ Normal mode shows a read-only rendered view of the document with syntax markers 
 
 | Key              | Action                          |
 |------------------|---------------------------------|
-| i / a            | Enter insert mode               |
-| o                | Open new line below, enter insert mode |
+| Ctrl+P           | Toggle to edit mode             |
 | /                | Search (highlights matches in preview) |
 | n                | Find next match (scrolls preview)    |
 | N                | Find previous match (scrolls preview) |
@@ -29,13 +28,13 @@ Normal mode shows a read-only rendered view of the document with syntax markers 
 | Ctrl+Q           | Quit (press twice if unsaved)   |
 | F1               | Show this help                  |
 
-## INSERT MODE
+## EDIT MODE
 
-Insert mode lets you edit the raw markdown text. Press `Esc` to return to normal mode.
+Edit mode lets you edit the raw markdown text. Press `Ctrl+P` to return to normal mode.
 
 | Key            | Action                          |
 |----------------|---------------------------------|
-| Esc            | Return to normal mode           |
+| Ctrl+P         | Toggle to normal mode           |
 | Ctrl+S         | Save file                       |
 | Ctrl+Q         | Quit (press twice if unsaved)   |
 | Ctrl+Z         | Undo                            |
@@ -43,7 +42,6 @@ Insert mode lets you edit the raw markdown text. Press `Esc` to return to normal
 | Ctrl+F         | Search                          |
 | Ctrl+N         | Find next match                 |
 | Ctrl+G         | Go to line number               |
-| Ctrl+P         | Return to normal mode           |
 | Ctrl+T         | Open Table of Contents          |
 | Ctrl+W         | Toggle word wrap                |
 | Ctrl+K         | Delete to end of line           |
@@ -76,7 +74,7 @@ Press `:` in normal mode to enter command mode. Type a command and press Enter.
 
 ## TOC MODE
 
-TOC mode shows a navigable Table of Contents listing all headings in the document. Open it with Ctrl+T from normal or insert mode. Pressing Enter jumps to the selected heading (in normal mode the preview scrolls to it; in insert mode the heading moves to the top of the screen).
+TOC mode shows a navigable Table of Contents listing all headings in the document. Open it with Ctrl+T from normal or edit mode. Pressing Enter jumps to the selected heading (in normal mode the preview scrolls to it; in edit mode the heading moves to the top of the screen).
 
 | Key      | Action                              |
 |----------|-------------------------------------|

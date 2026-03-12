@@ -217,6 +217,14 @@ static void editor_move_cursor(Editor *ed, int key)
             }
         }
         break;
+    case KEY_SR:    /* Shift+Up: move 10 lines up */
+        ed->cy -= 10;
+        if (ed->cy < 0) ed->cy = 0;
+        break;
+    case KEY_SF:    /* Shift+Down: move 10 lines down */
+        ed->cy += 10;
+        if (ed->cy >= ed->buf.num_lines) ed->cy = ed->buf.num_lines - 1;
+        break;
     case KEY_UP:
         if (ed->cy > 0) ed->cy--;
         break;
@@ -799,10 +807,10 @@ static void editor_draw_statusbar(Editor *ed)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
                    "q/Esc Close";
         else if (ed->preview_mode)
-            help = "i Insert | / Search | :w Save | :q Quit | "
+            help = "Ctrl+P Edit | / Search | :w Save | :q Quit | "
                    "j/k Scroll | g/G Top/Bot | F1 Help";
         else
-            help = "Esc Normal | Ctrl+S Save | Ctrl+Z Undo | Ctrl+Y Redo | "
+            help = "Ctrl+P Preview | Ctrl+S Save | Ctrl+Z Undo | Ctrl+Y Redo | "
                    "Ctrl+F Search | Ctrl+T TOC | F1 Help";
         attron(A_DIM);
         int hl = (int)strlen(help);
@@ -1007,6 +1015,7 @@ static void editor_process_key(Editor *ed)
         break;
 
     /* ── Navigation ── */
+    case KEY_SR: case KEY_SF:
     case KEY_UP: case KEY_DOWN:
     case KEY_LEFT: case KEY_RIGHT:
     case KEY_PPAGE: case KEY_NPAGE:

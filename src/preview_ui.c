@@ -36,12 +36,15 @@ void clamp_preview_scroll(Editor *ed)
 
 void editor_toggle_preview(Editor *ed)
 {
+    ed->search_query[0]  = '\0';
+    ed->search_query_len = 0;
+
     if (ed->preview_mode) {
         /* Leave preview → edit */
         preview_free(&ed->preview_buf);
         ed->preview_mode = 0;
         curs_set(1);
-        editor_set_status(ed, "-- INSERT --");
+        editor_set_status(ed, "-- EDIT MODE --");
     } else {
         /* Enter preview */
         getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
@@ -62,18 +65,9 @@ void editor_preview_process_key(Editor *ed, int c)
 
     switch (c) {
 
-    /* ── Enter insert mode ── */
-    case 'i':
-    case 'a':
+    /* ── Toggle edit mode ── */
+    case CTRL_KEY('p'):
         editor_toggle_preview(ed);
-        break;
-
-    /* ── Open line below and enter insert mode (vim o) ── */
-    case 'o':
-        editor_toggle_preview(ed);
-        ed->undo_seq++;
-        ed->cx = buffer_line_len(&ed->buf, ed->cy);
-        editor_insert_newline(ed);
         break;
 
     /* ── Search ── */
@@ -151,6 +145,16 @@ void editor_preview_process_key(Editor *ed, int c)
         break;
 
     /* ── Scrolling ── */
+    case KEY_SR:    /* Shift+Up */
+        ed->preview_scroll_y -= 10;
+        clamp_preview_scroll(ed);
+        break;
+
+    case KEY_SF:    /* Shift+Down */
+        ed->preview_scroll_y += 10;
+        clamp_preview_scroll(ed);
+        break;
+
     case KEY_UP:
     case 'k':
         ed->preview_scroll_y--;

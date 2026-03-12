@@ -49,17 +49,16 @@ make clean
 
 ## Key Bindings
 
-### Insert Mode
+### Edit Mode
 
 ![Edit mode](images/edit-mode.png)
-*Insert mode: markdown syntax with dimmed delimiters*
+*Edit mode: markdown syntax with dimmed delimiters*
 
 | Key               | Action                                  |
 |-------------------|-----------------------------------------|
-| Escape            | Return to normal mode                   |
+| Ctrl+P            | Toggle to normal mode                   |
 | Ctrl+S            | Save (prompts for filename if new)      |
 | Ctrl+Q            | Quit (confirm if unsaved)               |
-| Ctrl+P            | Return to normal mode                   |
 | Ctrl+W            | Toggle word wrap                        |
 | Ctrl+F            | Incremental search                      |
 | Ctrl+N            | Next search match                       |
@@ -82,8 +81,7 @@ make clean
 
 | Key                   | Action                              |
 |-----------------------|-------------------------------------|
-| i / a                 | Enter insert mode                   |
-| o                     | Open new line below, enter insert   |
+| Ctrl+P                | Toggle to edit mode                 |
 | /                     | Search (highlights matches in preview) |
 | n                     | Jump to next match                  |
 | N                     | Jump to previous match              |
