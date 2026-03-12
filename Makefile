@@ -30,7 +30,8 @@ $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
-            $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o
+            $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o \
+            $(BUILDDIR)/links.o
 
 test: $(BUILDDIR)/test_runner
 	./$(BUILDDIR)/test_runner

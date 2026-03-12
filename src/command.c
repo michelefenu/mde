@@ -1,10 +1,34 @@
 #include "command.h"
+#include "links.h"
 #include "search.h"
 #include "help.h"
 #include "preview_ui.h"
+#include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
+
+#define MAX_LINKS 256
+
+static void open_url(Editor *ed, const char *url)
+{
+    char cmd[600];
+#ifdef __APPLE__
+    snprintf(cmd, sizeof(cmd), "open '%s' >/dev/null 2>&1", url);
+#else
+    snprintf(cmd, sizeof(cmd), "xdg-open '%s' >/dev/null 2>&1", url);
+#endif
+    def_prog_mode();
+    endwin();
+    int ret = system(cmd);
+    reset_prog_mode();
+    refresh();
+    if (ret != 0)
+        editor_set_status(ed, "Failed to open: %s", url);
+    else
+        editor_set_status(ed, "Opened: %s", url);
+}
 
 void editor_command_mode(Editor *ed)
 {
@@ -69,6 +93,35 @@ void editor_command_mode(Editor *ed)
         editor_set_status(ed, "Word wrap OFF");
     } else if (strcmp(cmd, "help") == 0) {
         editor_show_help(ed);
+    } else if (strncmp(cmd, "open ", 5) == 0) {
+        int idx = atoi(cmd + 5);
+        if (idx <= 0) {
+            editor_set_status(ed, "Usage: :open N  (N >= 1)");
+        } else {
+            LinkInfo links[MAX_LINKS];
+            int count = links_collect(&ed->buf, links, MAX_LINKS);
+            if (idx > count) {
+                editor_set_status(ed, "No link %d (document has %d link%s)",
+                                  idx, count, count == 1 ? "" : "s");
+            } else {
+                const char *url = links[idx - 1].url;
+                if (url[0] == '#') {
+                    /* Internal anchor — scroll preview */
+                    int row = links_find_anchor(&ed->buf, url + 1);
+                    if (row < 0) {
+                        editor_set_status(ed, "Anchor not found: %s", url);
+                    } else {
+                        if (!ed->preview_mode) editor_toggle_preview(ed);
+                        ed->preview_scroll_y =
+                            preview_find_line(&ed->preview_buf, row);
+                        clamp_preview_scroll(ed);
+                        editor_set_status(ed, "Jumped to: %s", url);
+                    }
+                } else {
+                    open_url(ed, url);
+                }
+            }
+        }
     } else {
         /* Try as line number */
         int line = atoi(cmd);

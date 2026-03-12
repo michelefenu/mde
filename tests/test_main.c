@@ -7,6 +7,7 @@
 #include "../src/buffer.h"
 #include "../src/undo.h"
 #include "../src/render.h"
+#include "../src/links.h"
 
 /* ================================================================
  *  utf8 tests
@@ -401,6 +402,115 @@ static void test_render_byte_to_col(void)
 }
 
 /* ================================================================
+ *  links tests
+ * ================================================================ */
+
+static Buffer make_buf(const char **lines, int n)
+{
+    Buffer buf;
+    buffer_init(&buf);
+    /* Replace the initial empty line with first line */
+    if (n > 0) {
+        buffer_insert_line(&buf, 0, lines[0], (int)strlen(lines[0]));
+        buffer_delete_line(&buf, 1);
+        for (int i = 1; i < n; i++)
+            buffer_insert_line(&buf, i, lines[i], (int)strlen(lines[i]));
+    }
+    return buf;
+}
+
+static void test_links_collect_none(void)
+{
+    const char *lines[] = { "No links here.", "Just plain text." };
+    Buffer buf = make_buf(lines, 2);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_collect_single(void)
+{
+    const char *lines[] = { "Visit [example](https://example.com) today." };
+    Buffer buf = make_buf(lines, 1);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 1);
+    assert(strcmp(out[0].text, "example") == 0);
+    assert(strcmp(out[0].url, "https://example.com") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_collect_multiple(void)
+{
+    const char *lines[] = {
+        "[Alpha](https://alpha.example)",
+        "Some text [Beta](https://beta.example) more text [Gamma](https://gamma.example)"
+    };
+    Buffer buf = make_buf(lines, 2);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 3);
+    assert(strcmp(out[0].text, "Alpha") == 0);
+    assert(strcmp(out[1].text, "Beta") == 0);
+    assert(strcmp(out[2].text, "Gamma") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_collect_skips_images(void)
+{
+    const char *lines[] = {
+        "![alt text](https://img.example/pic.png)",
+        "[real link](https://real.example)"
+    };
+    Buffer buf = make_buf(lines, 2);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 1);
+    assert(strcmp(out[0].text, "real link") == 0);
+    assert(strcmp(out[0].url, "https://real.example") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_collect_anchor(void)
+{
+    const char *lines[] = { "See [Introduction](#introduction) below." };
+    Buffer buf = make_buf(lines, 1);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 1);
+    assert(strcmp(out[0].text, "Introduction") == 0);
+    assert(strcmp(out[0].url, "#introduction") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_find_anchor(void)
+{
+    const char *lines[] = {
+        "# Getting Started",
+        "Some text here.",
+        "## Advanced Usage",
+        "More text.",
+        "### Deep Section"
+    };
+    Buffer buf = make_buf(lines, 5);
+
+    assert(links_find_anchor(&buf, "getting-started") == 0);
+    assert(links_find_anchor(&buf, "advanced-usage") == 2);
+    assert(links_find_anchor(&buf, "deep-section") == 4);
+
+    buffer_free(&buf);
+}
+
+static void test_links_find_anchor_missing(void)
+{
+    const char *lines[] = { "# Real Heading", "text" };
+    Buffer buf = make_buf(lines, 2);
+    assert(links_find_anchor(&buf, "nonexistent") == -1);
+    buffer_free(&buf);
+}
+
+/* ================================================================
  *  main
  * ================================================================ */
 
@@ -433,6 +543,15 @@ int main(void)
     test_render_is_code_fence();
     test_render_get_block_type();
     test_render_byte_to_col();
+
+    /* links */
+    test_links_collect_none();
+    test_links_collect_single();
+    test_links_collect_multiple();
+    test_links_collect_skips_images();
+    test_links_collect_anchor();
+    test_links_find_anchor();
+    test_links_find_anchor_missing();
 
     printf("All tests passed.\n");
     return 0;

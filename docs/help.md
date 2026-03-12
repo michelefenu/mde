@@ -70,6 +70,7 @@ Press `:` in normal mode to enter command mode. Type a command and press Enter.
 | :set wrap      | Enable word wrap                |
 | :set nowrap    | Disable word wrap               |
 | :help          | Show this help                  |
+| :open *N*      | Open link N (browser or anchor) |
 | :*number*      | Jump to line number             |
 
 ## TOC MODE
