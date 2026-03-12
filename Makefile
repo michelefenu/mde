@@ -10,7 +10,7 @@ TARGET   = mde
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(SRCS:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(TARGET)
 
@@ -28,6 +28,15 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
+
+TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
+            $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o
+
+test: $(BUILDDIR)/test_runner
+	./$(BUILDDIR)/test_runner
+
+$(BUILDDIR)/test_runner: tests/test_main.c $(TEST_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) tests/test_main.c $(TEST_OBJS) -o $@ $(LDFLAGS)
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)

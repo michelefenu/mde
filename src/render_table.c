@@ -1,7 +1,20 @@
 #include "render_table.h"
+#include "utf8.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+static int cell_display_width(const char *s, int len)
+{
+    int cols = 0;
+    for (int i = 0; i < len; ) {
+        int clen = utf8_clen((unsigned char)s[i]);
+        if (i + clen > len) clen = len - i;
+        cols += utf8_char_width(s, len, i);
+        i += clen;
+    }
+    return cols;
+}
 
 #define MAX_TBL_COLS 32
 
@@ -90,7 +103,13 @@ static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
                               int body_indent)
 {
     int total = body_indent + 1;
-    for (int c = 0; c < ncols; c++) total += cw[c] + 2 + 1;
+    for (int c = 0; c < ncols; c++) {
+        int cl = (c < row->num_cells) ? row->cell_lens[c] : 0;
+        const char *ct = (c < row->num_cells) ? row->cells[c] : "";
+        int dw = cell_display_width(ct, cl);
+        /* bytes written = cl (cell bytes) + (cw[c]-dw) spaces + 2 pads + 1 vline */
+        total += cl + (cw[c] - dw) + 2 + 1;
+    }
 
     PreviewLine *pl = pv_add(pb, source_row, total);
     int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
@@ -102,8 +121,15 @@ static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
         pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
         int cl   = (c < row->num_cells) ? row->cell_lens[c] : 0;
         const char *ct = (c < row->num_cells) ? row->cells[c] : "";
-        for (int j = 0; j < cw[c]; j++) {
-            pl->text[p]         = (j < cl) ? ct[j] : ' ';
+        int dw = cell_display_width(ct, cl);
+        for (int j = 0; j < cl; j++) {
+            pl->text[p]         = ct[j];
+            pl->styles[p].attr  = ca;
+            pl->styles[p].cpair = cc;
+            p++;
+        }
+        for (int j = dw; j < cw[c]; j++) {
+            pl->text[p]         = ' ';
             pl->styles[p].attr  = ca;
             pl->styles[p].cpair = cc;
             p++;
@@ -133,9 +159,10 @@ void gen_table_block(PreviewBuffer *pb, Buffer *buf,
     memset(cw, 0, sizeof(cw));
     for (int i = 0; i < nr; i++) {
         if (rows[i].is_sep) continue;
-        for (int c = 0; c < rows[i].num_cells; c++)
-            if (rows[i].cell_lens[c] > cw[c])
-                cw[c] = rows[i].cell_lens[c];
+        for (int c = 0; c < rows[i].num_cells; c++) {
+            int dw = cell_display_width(rows[i].cells[c], rows[i].cell_lens[c]);
+            if (dw > cw[c]) cw[c] = dw;
+        }
     }
     for (int c = 0; c < max_cols; c++)
         if (cw[c] < 3) cw[c] = 3;

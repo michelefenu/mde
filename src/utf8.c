@@ -1,4 +1,5 @@
 #include "utf8.h"
+#include <wchar.h>
 
 int utf8_clen(unsigned char c)
 {
@@ -28,6 +29,23 @@ int utf8_prev_char(const char *text, int byte_pos)
     while (byte_pos > 0 && ((unsigned char)text[byte_pos] & 0xC0) == 0x80)
         byte_pos--;
     return byte_pos;
+}
+
+int utf8_char_width(const char *text, int len, int pos)
+{
+    if (pos >= len) return 1;
+    unsigned char c = (unsigned char)text[pos];
+    unsigned long cp;
+    int n;
+    if (c < 0x80)       { cp = c;           n = 1; }
+    else if (c < 0xC0)  { cp = c;           n = 1; } /* stray continuation */
+    else if (c < 0xE0)  { cp = c & 0x1F;   n = 2; }
+    else if (c < 0xF0)  { cp = c & 0x0F;   n = 3; }
+    else                 { cp = c & 0x07;   n = 4; }
+    for (int i = 1; i < n && pos + i < len; i++)
+        cp = (cp << 6) | ((unsigned char)text[pos + i] & 0x3F);
+    int w = wcwidth((wchar_t)cp);
+    return w > 0 ? w : 1;
 }
 
 int wchar_to_utf8(unsigned long wc, char out[4])

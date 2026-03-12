@@ -16,8 +16,8 @@ int render_byte_to_col(const char *text, int len, int byte_pos)
     while (i < byte_pos && i < len) {
         int clen = utf8_clen((unsigned char)text[i]);
         if (i + clen > len) clen = len - i;
+        col += utf8_char_width(text, len, i);
         i += clen;
-        col++;
     }
     return col;
 }
@@ -140,6 +140,14 @@ BlockType render_get_block_type(const char *line, int in_code_block)
 /* ================================================================
  *  Inline style computation
  * ================================================================ */
+
+/* The `claimed` array (one byte per source character) tracks which
+   characters have been processed by a prior inline pass:
+     0 = unclaimed, available for parsing
+     1 = delimiter (*, _, `, ~, [, ], (, )) — dimmed in edit mode,
+         stripped entirely in preview mode (strip_inline skips these)
+     2 = styled content (code span body, link text) — keeps its style,
+         later passes may add attributes but won't re-parse as delimiter */
 
 /* Find a closing run of `count` delimiter characters `ch`
  * starting from position `start`, skipping positions flagged
@@ -338,7 +346,9 @@ static void apply_links(const char *text, int len,
     }
 }
 
-/* Orchestrate all inline passes */
+/* Orchestrate all inline passes.
+   Code spans MUST run first: backtick-enclosed content is protected
+   from emphasis/link parsing by marking it as claimed. */
 static void apply_inline_styles(const char *text, int len, CharStyle *styles)
 {
     char *claimed = calloc(len + 1, 1);
@@ -627,7 +637,7 @@ static int find_word_break(const char *text, int start, int len,
             if (last_space > start) { *next_start = last_space + 1; return last_space; }
             *next_start = i; return i;  /* forced break */
         }
-        col++;
+        col += utf8_char_width(text, len, i);
         i += clen;
     }
     *next_start = len;
@@ -974,12 +984,10 @@ static int utf8_display_width(const char *s, int len)
 {
     int cols = 0;
     for (int i = 0; i < len; ) {
-        unsigned char c = (unsigned char)s[i];
-        if (c < 0x80)        { cols++; i += 1; }
-        else if (c < 0xC0)   {         i += 1; } /* stray continuation */
-        else if (c < 0xE0)   { cols++; i += 2; }
-        else if (c < 0xF0)   { cols++; i += 3; }
-        else                  { cols++; i += 4; }
+        int clen = utf8_clen((unsigned char)s[i]);
+        if (i + clen > len) clen = len - i;
+        cols += utf8_char_width(s, len, i);
+        i += clen;
     }
     return cols;
 }
@@ -1291,9 +1299,9 @@ void preview_draw_line(int screen_y, int screen_cols,
             attron(a);
             addnstr(pl->text + i, clen);
             attroff(a);
+            col += utf8_char_width(pl->text, pl->len, i);
             i += clen;
         }
-        col++;
     }
 }
 
@@ -1312,7 +1320,7 @@ static int find_preview_word_break(PreviewLine *pl, int start,
             if (last_space > start) { *next_start = last_space + 1; return last_space; }
             *next_start = i; return i;
         }
-        col++;
+        col += pl->styles[i].acs ? 1 : utf8_char_width(pl->text, pl->len, i);
         i += clen;
     }
     *next_start = pl->len;
