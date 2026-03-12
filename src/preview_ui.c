@@ -102,19 +102,6 @@ void editor_preview_process_key(Editor *ed, int c)
         editor_command_mode(ed);
         break;
 
-    /* ── Undo / Redo ── */
-    case 'u':
-        editor_toggle_preview(ed);
-        editor_undo(ed);
-        editor_toggle_preview(ed);
-        break;
-
-    case CTRL_KEY('r'):
-        editor_toggle_preview(ed);
-        editor_redo(ed);
-        editor_toggle_preview(ed);
-        break;
-
     /* ── Quit ── */
     case CTRL_KEY('q'):
         if (ed->dirty && ed->quit_times > 0) {
