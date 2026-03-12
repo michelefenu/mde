@@ -9,12 +9,12 @@ A terminal-based markdown editor written in C. Edit and preview markdown files w
 ## Features
 
 - **Live syntax styling**: headings, bold, italic, strikethrough, inline code, links, lists, blockquotes, code blocks, and horizontal rules are coloured and styled as you type; markdown delimiters are dimmed so the content stays readable
-- **Preview mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders; vim-style `/` search with highlighted matches and `n`/`N` navigation without leaving preview
+- **Normal mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders; vim-style `/` search with highlighted matches and `n`/`N` navigation without leaving normal mode
 - **Todo items**: GFM-style task checkboxes (`- [ ]` open, `- [x]` done) with coloured styling; metadata tokens highlighted — `#tag`, `@assignee`, `~duration`, and `yyyy-mm-dd` dates
 - **List autocompletion**: pressing Enter on a list item starts the next item automatically — `- `, `* `, `+ ` for unordered; incremented numbers for ordered (`1.` → `2.`, `1)` → `2)`) with indentation preserved; pressing Enter on an empty list item exits the list
-- **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and preview mode
+- **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and normal mode
 - **Table of Contents**: Ctrl+T opens a navigable TOC panel listing all headings; press j/k to navigate, Enter to jump to the selected heading
-- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match; `/` search in preview mode with `n`/`N` navigation
+- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match; `/` search in normal mode with `n`/`N` navigation
 - **Undo/redo**: full undo history with Ctrl+Z / Ctrl+Y; operations like list continuation undo atomically
 - **Status bar**: filename, cursor position, line count, dirty indicator
 
@@ -56,47 +56,69 @@ make clean
 
 | Key               | Action                                  |
 |-------------------|-----------------------------------------|
-| Ctrl+P            | Toggle to normal mode                   |
-| Ctrl+S            | Save (prompts for filename if new)      |
-| Ctrl+Q            | Quit (confirm if unsaved)               |
-| Ctrl+W            | Toggle word wrap                        |
-| Ctrl+F            | Incremental search                      |
-| Ctrl+N            | Next search match                       |
-| Ctrl+G            | Go to line number                       |
-| Ctrl+K            | Delete to end of line                   |
-| Ctrl+Z            | Undo                                    |
-| Ctrl+Y            | Redo                                    |
-| Ctrl+A / Home     | Beginning of line                       |
-| Ctrl+E / End      | End of line                             |
-| Ctrl+L            | Force screen refresh                    |
-| Tab               | Insert 4 spaces                         |
-| Enter             | New line (continues list if applicable) |
-| Page Up/Down      | Scroll by page                          |
-| Arrow keys        | Navigate                                |
+| Ctrl+P         | Toggle to normal mode           |
+| Ctrl+S         | Save file                       |
+| Ctrl+Q         | Quit (press twice if unsaved)   |
+| Ctrl+Z         | Undo                            |
+| Ctrl+Y         | Redo                            |
+| Ctrl+F         | Search                          |
+| Ctrl+N         | Find next match                 |
+| Ctrl+G         | Go to line number               |
+| Ctrl+T         | Open Table of Contents          |
+| Ctrl+W         | Toggle word wrap                |
+| Ctrl+K         | Delete to end of line           |
+| Ctrl+A         | Move to beginning of line       |
+| Ctrl+E         | Move to end of line             |
+| Ctrl+L         | Refresh screen                  |
+| Ctrl+H         | Delete character (backspace)    |
+| Tab            | Insert 4 spaces                 |
+| Arrow keys     | Move cursor                     |
+| Home / End     | Beginning / end of line         |
+| Page Up / Down | Scroll by screen height         |
+| F1             | Show help                       |
 
-### Preview Mode (Normal Mode)
+### Normal Mode
 
 ![Preview mode](images/preview-mode.png)
-*Preview mode: read-only rendered view with vim-like keybindings*
+*Normal mode: read-only rendered view with vim-like keybindings*
 
-| Key                   | Action                              |
-|-----------------------|-------------------------------------|
-| Ctrl+P                | Toggle to edit mode                 |
-| /                     | Search (highlights matches in preview) |
-| n                     | Jump to next match                  |
-| N                     | Jump to previous match              |
-| :                     | Enter command mode                  |
-| u                     | Undo                                |
-| Ctrl+R                | Redo                                |
-| j / k / Arrows        | Scroll line by line                 |
-| Space / Page Down     | Scroll down by page                 |
-| Page Up               | Scroll up by page                   |
-| g / Home              | Jump to top                         |
-| G / End               | Jump to bottom                      |
-| Ctrl+T                | Open Table of Contents              |
-| Ctrl+W                | Toggle word wrap                    |
-| F1                    | Show help                           |
-| Ctrl+Q                | Quit                                |
+| Key              | Action                                 |
+|------------------|----------------------------------------|
+| Ctrl+P           | Toggle to edit mode                    |
+| /                | Search (highlights matches in preview) |
+| n                | Find next match                        |
+| N                | Find previous match                    |
+| :                | Enter command mode                     |
+| u                | Undo                                   |
+| Ctrl+R           | Redo                                   |
+| j / Down         | Scroll down one line                   |
+| k / Up           | Scroll up one line                     |
+| Space / Page Dn  | Scroll down one page                   |
+| Page Up          | Scroll up one page                     |
+| g / Home         | Jump to top                            |
+| G / End          | Jump to bottom                         |
+| Ctrl+T           | Open Table of Contents                 |
+| Ctrl+W           | Toggle word wrap                       |
+| Ctrl+Q           | Quit (press twice if unsaved)          |
+| F1               | Show help                              |
+
+### Command Mode
+
+Press `:` in normal mode to enter command mode.
+
+| Command       | Action                          |
+|---------------|---------------------------------|
+| :w            | Save file                       |
+| :q            | Quit (fails if unsaved)         |
+| :q!           | Force quit without saving       |
+| :wq           | Save and quit                   |
+| :x            | Save and quit (same as :wq)     |
+| :e *filename* | Open a different file           |
+| :set wrap     | Enable word wrap                |
+| :set nowrap   | Disable word wrap               |
+| :help         | Show help                       |
+| :open *N*     | Open link N (browser or anchor) |
+| :*number*     | Jump to line number             |
 
 ## Supported Markdown
 
