@@ -294,7 +294,7 @@ static int list_next_prefix(const char *line, char *out, int out_size)
     return 0;
 }
 
-static void editor_insert_newline(Editor *ed)
+void editor_insert_newline(Editor *ed)
 {
     const char *cur = buffer_line_data(&ed->buf, ed->cy);
     char prefix[64];
@@ -448,7 +448,7 @@ static void undo_apply_forward(Editor *ed, UndoEntry *e)
     }
 }
 
-static void editor_undo(Editor *ed)
+void editor_undo(Editor *ed)
 {
     if (undo_empty(&ed->undo)) {
         editor_set_status(ed, "Nothing to undo");
@@ -472,7 +472,7 @@ static void editor_undo(Editor *ed)
     editor_set_status(ed, "Undo (%d action%s)", count, count > 1 ? "s" : "");
 }
 
-static void editor_redo(Editor *ed)
+void editor_redo(Editor *ed)
 {
     if (undo_empty(&ed->redo)) {
         editor_set_status(ed, "Nothing to redo");
@@ -513,7 +513,7 @@ void editor_open(Editor *ed, const char *filename)
     }
 }
 
-static void editor_save(Editor *ed)
+void editor_save(Editor *ed)
 {
     if (!ed->filename) {
         char *name = editor_prompt(ed, "Save as: ", NULL);
@@ -725,7 +725,7 @@ static void editor_draw_statusbar(Editor *ed)
         rlen = snprintf(right, sizeof(right), "%d%% (%d/%d) ",
                         pct, ed->help_scroll_y + 1, ed->help_buf.num_lines);
     } else if (ed->preview_mode) {
-        llen = snprintf(left, sizeof(left), " %s [PREVIEW]",
+        llen = snprintf(left, sizeof(left), " %s [NORMAL]",
                         ed->filename ? ed->filename : "[New File]");
         int cur = ed->preview_scroll_y + 1;
         int tot = ed->preview_buf.num_lines;
@@ -776,11 +776,11 @@ static void editor_draw_statusbar(Editor *ed)
             help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
                    "q/Esc Close";
         else if (ed->preview_mode)
-            help = "j/k Scroll | Space PgDn | g/G Top/Bot | o Open Link | "
-                   "Ctrl+T TOC | F1 Help | q/Esc/Ctrl+P Edit";
+            help = "i Insert | / Search | :w Save | :q Quit | "
+                   "j/k Scroll | g/G Top/Bot | F1 Help";
         else
-            help = "Ctrl+S Save | Ctrl+Q Quit | Ctrl+Z Undo | Ctrl+Y Redo | "
-                   "Ctrl+F Search | Ctrl+P Preview | Ctrl+T TOC | F1 Help";
+            help = "Esc Normal | Ctrl+S Save | Ctrl+Z Undo | Ctrl+Y Redo | "
+                   "Ctrl+F Search | Ctrl+T TOC | F1 Help";
         attron(A_DIM);
         int hl = (int)strlen(help);
         if (hl > ed->screen_cols) hl = ed->screen_cols;
@@ -995,10 +995,9 @@ static void editor_process_key(Editor *ed)
     case KEY_RESIZE:
         break;
 
-    /* ── Escape: clear search highlight ── */
+    /* ── Escape: switch to normal mode ── */
     case 27:
-        ed->search_query[0]  = '\0';
-        ed->search_query_len = 0;
+        editor_toggle_preview(ed);
         break;
 
     /* ── Non-ASCII character (from editor_read_key) ── */
@@ -1054,9 +1053,11 @@ void editor_run(Editor *ed)
     if (has_colors())
         render_init_colors();
 
+    /* Start in normal (preview) mode */
+    editor_toggle_preview(ed);
     editor_set_status(ed,
         "mde — Terminal Markdown Editor  |  "
-        "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Preview");
+        ":q Quit  |  :w Save  |  i Insert  |  F1 Help");
 
     while (!ed->quit) {
         editor_refresh_screen(ed);

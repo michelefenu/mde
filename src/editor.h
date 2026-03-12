@@ -59,10 +59,14 @@ void editor_free(Editor *ed);
 void editor_open(Editor *ed, const char *filename);
 void editor_run(Editor *ed);
 
-/* Internal API used by sub-modules (search, help, preview_ui) */
+/* Internal API used by sub-modules (search, help, preview_ui, command) */
 typedef void (*PromptCallback)(Editor *ed, const char *input, int key);
 char *editor_prompt(Editor *ed, const char *prompt_str, PromptCallback cb);
 void  editor_set_status(Editor *ed, const char *fmt, ...);
 void  editor_refresh_screen(Editor *ed);
+void  editor_save(Editor *ed);
+void  editor_undo(Editor *ed);
+void  editor_redo(Editor *ed);
+void  editor_insert_newline(Editor *ed);
 
 #endif

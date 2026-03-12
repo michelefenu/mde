@@ -1,6 +1,8 @@
 #include "preview_ui.h"
 #include "help.h"
 #include "toc.h"
+#include "search.h"
+#include "command.h"
 #include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +41,7 @@ void editor_toggle_preview(Editor *ed)
         preview_free(&ed->preview_buf);
         ed->preview_mode = 0;
         curs_set(1);
-        editor_set_status(ed, "Edit mode");
+        editor_set_status(ed, "-- INSERT --");
     } else {
         /* Enter preview */
         getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
@@ -49,149 +51,103 @@ void editor_toggle_preview(Editor *ed)
         ed->preview_scroll_y = preview_find_line(&ed->preview_buf,
                                                  ed->scroll_y);
         curs_set(0);
-        editor_set_status(ed, "Preview mode — Ctrl+P or q to return");
+        editor_set_status(ed, "-- NORMAL --");
     }
-}
-
-/* ── Open link in browser ── */
-
-static void editor_open_url(Editor *ed, const char *url)
-{
-    char cmd[1024];
-#ifdef __APPLE__
-    snprintf(cmd, sizeof(cmd), "open '%s'", url);
-#else
-    snprintf(cmd, sizeof(cmd), "xdg-open '%s'", url);
-#endif
-    def_prog_mode();
-    endwin();
-    int ret = system(cmd);
-    reset_prog_mode();
-    refresh();
-    if (ret != 0)
-        editor_set_status(ed, "Could not open URL");
-}
-
-typedef struct { char url[512]; char text[256]; } LinkInfo;
-
-static int editor_collect_links(Buffer *buf, LinkInfo *links, int max_links)
-{
-    int count = 0;
-    for (int r = 0; r < buf->num_lines && count < max_links; r++) {
-        const char *line = buffer_line_data(buf, r);
-        int len = buffer_line_len(buf, r);
-        for (int i = 0; i < len && count < max_links; i++) {
-            if (line[i] != '[') continue;
-            /* Skip images */
-            if (i > 0 && line[i - 1] == '!') continue;
-
-            int bracket_end = -1;
-            for (int j = i + 1; j < len; j++) {
-                if (line[j] == ']') { bracket_end = j; break; }
-            }
-            if (bracket_end < 0 || bracket_end + 1 >= len ||
-                line[bracket_end + 1] != '(') continue;
-
-            int paren_end = -1;
-            for (int j = bracket_end + 2; j < len; j++) {
-                if (line[j] == ')') { paren_end = j; break; }
-            }
-            if (paren_end < 0) continue;
-
-            int tlen = bracket_end - i - 1;
-            int ulen = paren_end - bracket_end - 2;
-            if (ulen <= 0) { i = paren_end; continue; }
-
-            LinkInfo *li = &links[count];
-            if (tlen >= (int)sizeof(li->text)) tlen = (int)sizeof(li->text) - 1;
-            memcpy(li->text, line + i + 1, tlen);
-            li->text[tlen] = '\0';
-
-            if (ulen >= (int)sizeof(li->url)) ulen = (int)sizeof(li->url) - 1;
-            memcpy(li->url, line + bracket_end + 2, ulen);
-            li->url[ulen] = '\0';
-
-            count++;
-            i = paren_end;
-        }
-    }
-    return count;
-}
-
-static void editor_preview_open_link(Editor *ed)
-{
-    LinkInfo links[64];
-    int n = editor_collect_links(&ed->buf, links, 64);
-
-    if (n == 0) {
-        editor_set_status(ed, "No links found in document");
-        return;
-    }
-
-    if (n == 1) {
-        editor_set_status(ed, "Opening: %s", links[0].url);
-        editor_open_url(ed, links[0].url);
-        return;
-    }
-
-    /* Build a compact prompt listing links */
-    char list[1024];
-    int pos = 0;
-    for (int i = 0; i < n && pos < (int)sizeof(list) - 40; i++) {
-        pos += snprintf(list + pos, sizeof(list) - pos,
-                        "%d:%s  ", i + 1, links[i].text);
-    }
-    editor_set_status(ed, "%s", list);
-    editor_refresh_screen(ed);
-
-    char *input = editor_prompt(ed, "Open link #: ", NULL);
-    if (!input) {
-        editor_set_status(ed, "");
-        return;
-    }
-
-    int choice = atoi(input);
-    free(input);
-    if (choice < 1 || choice > n) {
-        editor_set_status(ed, "Invalid link number");
-        return;
-    }
-
-    editor_set_status(ed, "Opening: %s", links[choice - 1].url);
-    editor_open_url(ed, links[choice - 1].url);
 }
 
 void editor_preview_process_key(Editor *ed, int c)
 {
+    if (c != CTRL_KEY('q'))
+        ed->quit_times = MDE_QUIT_TIMES;
+
     switch (c) {
-    case CTRL_KEY('p'):
-    case 'q':
-    case 27:                              /* Escape */
+
+    /* ── Enter insert mode ── */
+    case 'i':
+    case 'a':
         editor_toggle_preview(ed);
         break;
 
+    /* ── Open line below and enter insert mode (vim o) ── */
+    case 'o':
+        editor_toggle_preview(ed);
+        ed->undo_seq++;
+        ed->cx = buffer_line_len(&ed->buf, ed->cy);
+        editor_insert_newline(ed);
+        break;
+
+    /* ── Search ── */
+    case '/':
+        editor_toggle_preview(ed);
+        editor_search(ed);
+        break;
+
+    case 'n':
+        if (ed->search_query_len == 0) {
+            editor_set_status(ed, "No search query");
+            break;
+        }
+        editor_toggle_preview(ed);
+        editor_search_next(ed);
+        break;
+
+    case 'N':
+        if (ed->search_query_len == 0) {
+            editor_set_status(ed, "No search query");
+            break;
+        }
+        editor_toggle_preview(ed);
+        editor_search_prev(ed);
+        break;
+
+    /* ── Command mode ── */
+    case ':':
+        editor_command_mode(ed);
+        break;
+
+    /* ── Undo / Redo ── */
+    case 'u':
+        editor_toggle_preview(ed);
+        editor_undo(ed);
+        editor_toggle_preview(ed);
+        break;
+
+    case CTRL_KEY('r'):
+        editor_toggle_preview(ed);
+        editor_redo(ed);
+        editor_toggle_preview(ed);
+        break;
+
+    /* ── Quit ── */
     case CTRL_KEY('q'):
+        if (ed->dirty && ed->quit_times > 0) {
+            editor_set_status(ed,
+                "Unsaved changes! Ctrl+Q %d more time(s) to force quit.",
+                ed->quit_times);
+            ed->quit_times--;
+            return;
+        }
         ed->quit = 1;
         break;
 
+    /* ── Word wrap ── */
     case CTRL_KEY('w'):
         ed->word_wrap = !ed->word_wrap;
         clamp_preview_scroll(ed);
         editor_set_status(ed, "Word wrap %s", ed->word_wrap ? "ON" : "OFF");
         break;
 
+    /* ── Help ── */
     case KEY_F(1):
         editor_show_help(ed);
         break;
 
+    /* ── Table of Contents ── */
     case CTRL_KEY('t'):
         editor_show_toc(ed);
         break;
 
-    case 'o':
-        editor_preview_open_link(ed);
-        break;
-
+    /* ── Scrolling ── */
     case KEY_UP:
     case 'k':
         ed->preview_scroll_y--;

@@ -79,6 +79,41 @@ void editor_search_next(Editor *ed)
     editor_set_status(ed, "Pattern not found: %s", ed->search_query);
 }
 
+void editor_search_prev(Editor *ed)
+{
+    if (ed->search_query_len == 0) {
+        editor_set_status(ed, "No search query.");
+        return;
+    }
+
+    for (int off = 1; off <= ed->buf.num_lines; off++) {
+        int   row  = (ed->cy - off + ed->buf.num_lines) % ed->buf.num_lines;
+        char *line = buffer_line_data(&ed->buf, row);
+        int   line_len = buffer_line_len(&ed->buf, row);
+
+        /* Find the last match before the limit */
+        int limit = (off == 1 && row == ed->cy) ? ed->cx : line_len;
+
+        char *last_match = NULL;
+        char *p = line;
+        while ((p = strstr(p, ed->search_query)) != NULL) {
+            if ((int)(p - line) < limit)
+                last_match = p;
+            else
+                break;
+            p++;
+        }
+
+        if (last_match) {
+            ed->cy = row;
+            ed->cx = (int)(last_match - line);
+            editor_set_status(ed, "Match on line %d", row + 1);
+            return;
+        }
+    }
+    editor_set_status(ed, "Pattern not found: %s", ed->search_query);
+}
+
 void editor_goto_line(Editor *ed)
 {
     char *input = editor_prompt(ed, "Go to line: ", NULL);
