@@ -19,10 +19,14 @@ static int cell_display_width(const char *s, int len)
 #define MAX_TBL_COLS 32
 
 typedef struct {
-    char *cells[MAX_TBL_COLS];
-    int   cell_lens[MAX_TBL_COLS];
-    int   num_cells;
-    int   is_sep;
+    char      *cells[MAX_TBL_COLS];       /* raw cell text (owned) */
+    int        cell_lens[MAX_TBL_COLS];
+    char      *stripped[MAX_TBL_COLS];    /* stripped text (owned) — NULL for sep rows */
+    CharStyle *cell_styles[MAX_TBL_COLS]; /* per-char styles for stripped text */
+    int        strip_lens[MAX_TBL_COLS];  /* byte length of stripped text */
+    int        strip_dws[MAX_TBL_COLS];   /* display-column width of stripped text */
+    int        num_cells;
+    int        is_sep;
 } TRow;
 
 int is_table_line(const char *line, int len)
@@ -70,7 +74,11 @@ static void parse_table_row(const char *line, int len, TRow *row)
 
 static void free_trow(TRow *r)
 {
-    for (int c = 0; c < r->num_cells; c++) free(r->cells[c]);
+    for (int c = 0; c < r->num_cells; c++) {
+        free(r->cells[c]);
+        free(r->stripped[c]);       /* NULL-safe */
+        free(r->cell_styles[c]);    /* NULL-safe */
+    }
 }
 
 /* kind: 0 = top  ┌─┬─┐   1 = mid  ├─┼─┤   2 = bot  └─┴─┘ */
@@ -99,41 +107,29 @@ static void gen_table_border(PreviewBuffer *pb, int *cw, int ncols,
 }
 
 static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
-                              int ncols, int is_hdr, int source_row,
-                              int body_indent)
+                              int ncols, int source_row, int body_indent)
 {
     int total = body_indent + 1;
     for (int c = 0; c < ncols; c++) {
-        int cl = (c < row->num_cells) ? row->cell_lens[c] : 0;
-        const char *ct = (c < row->num_cells) ? row->cells[c] : "";
-        int dw = cell_display_width(ct, cl);
-        /* bytes written = cl (cell bytes) + (cw[c]-dw) spaces + 2 pads + 1 vline */
-        total += cl + (cw[c] - dw) + 2 + 1;
+        int sl = (c < row->num_cells) ? row->strip_lens[c] : 0;
+        int dw = (c < row->num_cells) ? row->strip_dws[c]  : 0;
+        /* bytes written = sl (stripped bytes) + (cw[c]-dw) spaces + 2 pads + 1 vline */
+        total += sl + (cw[c] - dw) + 2 + 1;
     }
 
     PreviewLine *pl = pv_add(pb, source_row, total);
     int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
-    attr_t ca = is_hdr ? A_BOLD : 0;
-    short  cc = is_hdr ? CP_HEADING2 : CP_DEFAULT;
 
     pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
     for (int c = 0; c < ncols; c++) {
         pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
-        int cl   = (c < row->num_cells) ? row->cell_lens[c] : 0;
-        const char *ct = (c < row->num_cells) ? row->cells[c] : "";
-        int dw = cell_display_width(ct, cl);
-        for (int j = 0; j < cl; j++) {
-            pl->text[p]         = ct[j];
-            pl->styles[p].attr  = ca;
-            pl->styles[p].cpair = cc;
-            p++;
-        }
-        for (int j = dw; j < cw[c]; j++) {
-            pl->text[p]         = ' ';
-            pl->styles[p].attr  = ca;
-            pl->styles[p].cpair = cc;
-            p++;
-        }
+        int sl = (c < row->num_cells) ? row->strip_lens[c]  : 0;
+        int dw = (c < row->num_cells) ? row->strip_dws[c]   : 0;
+        const char      *st = (c < row->num_cells) ? row->stripped[c]    : NULL;
+        const CharStyle *ss = (c < row->num_cells) ? row->cell_styles[c] : NULL;
+        if (sl > 0 && st && ss)
+            p = pv_copy(pl, p, st, ss, sl);
+        p = pv_fill(pl, p, cw[c] - dw, ' ', 0, CP_DEFAULT);
         pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
     }
@@ -155,13 +151,35 @@ void gen_table_block(PreviewBuffer *pb, Buffer *buf,
             max_cols = rows[i].num_cells;
     }
 
+    /* Find first separator to distinguish header rows from body rows */
+    int first_sep = -1;
+    for (int i = 0; i < nr && first_sep < 0; i++)
+        if (rows[i].is_sep) first_sep = i;
+
+    /* Pre-strip inline markdown in each non-separator cell */
+    for (int i = 0; i < nr; i++) {
+        if (rows[i].is_sep) continue;
+        int   is_hdr = (first_sep > 0 && i < first_sep);
+        attr_t  ba   = is_hdr ? A_BOLD : 0;
+        short   bc   = is_hdr ? CP_HEADING2 : CP_DEFAULT;
+        for (int c = 0; c < rows[i].num_cells; c++) {
+            strip_inline(rows[i].cells[c], rows[i].cell_lens[c],
+                         ba, bc,
+                         &rows[i].stripped[c],
+                         &rows[i].cell_styles[c],
+                         &rows[i].strip_lens[c], NULL);
+            rows[i].strip_dws[c] =
+                cell_display_width(rows[i].stripped[c], rows[i].strip_lens[c]);
+        }
+    }
+
     int cw[MAX_TBL_COLS];
     memset(cw, 0, sizeof(cw));
     for (int i = 0; i < nr; i++) {
         if (rows[i].is_sep) continue;
         for (int c = 0; c < rows[i].num_cells; c++) {
-            int dw = cell_display_width(rows[i].cells[c], rows[i].cell_lens[c]);
-            if (dw > cw[c]) cw[c] = dw;
+            if (rows[i].strip_dws[c] > cw[c])
+                cw[c] = rows[i].strip_dws[c];
         }
     }
     for (int c = 0; c < max_cols; c++)
@@ -171,15 +189,12 @@ void gen_table_block(PreviewBuffer *pb, Buffer *buf,
 
     gen_table_border(pb, cw, max_cols, 0, start, body_indent);
 
-    int found_sep = 0;
     for (int i = 0; i < nr; i++) {
-        if (rows[i].is_sep) {
+        if (rows[i].is_sep)
             gen_table_border(pb, cw, max_cols, 1, start + i, body_indent);
-            found_sep = 1;
-        } else {
+        else
             gen_table_content(pb, &rows[i], cw, max_cols,
-                              !found_sep, start + i, body_indent);
-        }
+                              start + i, body_indent);
     }
 
     gen_table_border(pb, cw, max_cols, 2, end - 1, body_indent);

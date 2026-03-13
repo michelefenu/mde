@@ -717,10 +717,10 @@ int render_draw_line_wrapped(int screen_y, int screen_cols,
    new string that omits delimiter characters (claimed == 1).
    next_link_idx: when non-NULL, link indices (1,2,3...) are appended
    after each link for preview mode; caller must persist across blocks. */
-static void strip_inline(const char *src, int src_len,
-                         attr_t base_attr, short base_cpair,
-                         char **out_text, CharStyle **out_styles,
-                         int *out_len, int *next_link_idx)
+void strip_inline(const char *src, int src_len,
+                  attr_t base_attr, short base_cpair,
+                  char **out_text, CharStyle **out_styles,
+                  int *out_len, int *next_link_idx)
 {
     if (src_len <= 0) {
         *out_text   = calloc(1, 1);

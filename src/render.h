@@ -108,6 +108,12 @@ int  preview_highlight_search_wrapped(int screen_y, int screen_cols,
                                       PreviewLine *pl, int max_rows,
                                       const char *query, int qlen);
 
+/* ── Inline markdown stripping (used by render.c and render_table.c) ── */
+void strip_inline(const char *src, int src_len,
+                  attr_t base_attr, short base_cpair,
+                  char **out_text, CharStyle **out_styles,
+                  int *out_len, int *next_link_idx);
+
 /* ── PreviewBuffer construction helpers (used by render.c and render_table.c) ── */
 PreviewLine *pv_add(PreviewBuffer *pb, int source_row, int len);
 int          pv_fill(PreviewLine *pl, int pos, int n,
