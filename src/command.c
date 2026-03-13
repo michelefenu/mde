@@ -69,8 +69,10 @@ static int command_tab_complete(char *buf, int buflen, int maxlen)
         /* Skip hidden files unless the user explicitly typed a leading dot */
         if (de->d_name[0] == '.' && (baselen == 0 || base[0] != '.'))
             continue;
-        if (strncmp(de->d_name, base, baselen) == 0)
-            strncpy(matches[nmatch++], de->d_name, 255);
+        if (strncmp(de->d_name, base, baselen) == 0) {
+            snprintf(matches[nmatch], sizeof(matches[nmatch]), "%s", de->d_name);
+            nmatch++;
+        }
     }
     closedir(dp);
 
@@ -78,7 +80,8 @@ static int command_tab_complete(char *buf, int buflen, int maxlen)
 
     /* Find the longest common prefix among all matches */
     char common[256];
-    strncpy(common, matches[0], 255);
+    strncpy(common, matches[0], sizeof(common) - 1);
+    common[sizeof(common) - 1] = '\0';
     for (int i = 1; i < nmatch; i++) {
         int j = 0;
         while (common[j] && matches[i][j] && common[j] == matches[i][j])
