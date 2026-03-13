@@ -153,18 +153,29 @@ static void editor_scroll(Editor *ed)
            then add the cursor's sub-line within cy. */
         for (;;) {
             int vis_y = 0;
+            /* Pre-scan code fence state up to scroll_y */
+            int sc_in_code = 0;
+            for (int i = 0; i < ed->scroll_y && i < ed->buf.num_lines; i++) {
+                if (render_is_code_fence(buffer_line_data(&ed->buf, i)))
+                    sc_in_code = !sc_in_code;
+            }
+            int sc_code = sc_in_code;
             for (int r = ed->scroll_y; r < ed->cy; r++) {
-                vis_y += render_wrap_height(
-                    buffer_line_data(&ed->buf, r),
-                    buffer_line_len(&ed->buf, r),
-                    ed->screen_cols);
+                const char *rd = buffer_line_data(&ed->buf, r);
+                int rl = buffer_line_len(&ed->buf, r);
+                BlockType rbt = render_get_block_type(rd, sc_code);
+                if (rbt == BLOCK_CODE_FENCE) sc_code = !sc_code;
+                int ci = render_line_content_indent(rd, rl, rbt);
+                vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
             }
             /* Add cursor's sub-line within its own line */
             const char *cl = buffer_line_data(&ed->buf, ed->cy);
             int cl_len = buffer_line_len(&ed->buf, ed->cy);
+            BlockType cy_bt = render_get_block_type(cl, sc_code);
+            int cy_ci = render_line_content_indent(cl, cl_len, cy_bt);
             int sub_row, sub_col;
-            render_wrap_cursor_pos(cl, cl_len, ed->screen_cols, ed->cx,
-                                   &sub_row, &sub_col);
+            render_wrap_cursor_pos(cl, cl_len, ed->screen_cols, cy_ci,
+                                   ed->cx, &sub_row, &sub_col);
             vis_y += sub_row;
 
             if (vis_y >= ed->screen_rows) {
@@ -571,10 +582,11 @@ static void editor_draw_rows(Editor *ed)
 
             if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
 
+            int ci = render_line_content_indent(line, len, bt);
             int remaining = ed->screen_rows - y;
             int used = render_draw_line_wrapped(y, ed->screen_cols,
                                                 line, len, bt, hl,
-                                                remaining);
+                                                remaining, ci);
             y += used;
             frow++;
         }
@@ -851,18 +863,30 @@ void editor_refresh_screen(Editor *ed)
         move(ed->screen_rows, 0);
     } else if (ed->word_wrap) {
         /* Place cursor accounting for wrapped lines */
+        /* Pre-scan code fence state up to scroll_y */
+        int cur_in_code = 0;
+        for (int i = 0; i < ed->scroll_y && i < ed->buf.num_lines; i++) {
+            if (render_is_code_fence(buffer_line_data(&ed->buf, i)))
+                cur_in_code = !cur_in_code;
+        }
+        int cur_code = cur_in_code;
+        int vis_y = 0;
+        for (int r = ed->scroll_y; r < ed->cy; r++) {
+            const char *rd = buffer_line_data(&ed->buf, r);
+            int rl = buffer_line_len(&ed->buf, r);
+            BlockType rbt = render_get_block_type(rd, cur_code);
+            if (rbt == BLOCK_CODE_FENCE) cur_code = !cur_code;
+            int ci = render_line_content_indent(rd, rl, rbt);
+            vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
+        }
+
         const char *line = buffer_line_data(&ed->buf, ed->cy);
         int line_len = buffer_line_len(&ed->buf, ed->cy);
+        BlockType cy_bt = render_get_block_type(line, cur_code);
+        int cy_ci = render_line_content_indent(line, line_len, cy_bt);
         int wrap_row, wrap_col;
-        render_wrap_cursor_pos(line, line_len, ed->screen_cols, ed->cx,
-                               &wrap_row, &wrap_col);
-
-        int vis_y = 0;
-        for (int r = ed->scroll_y; r < ed->cy; r++)
-            vis_y += render_wrap_height(
-                buffer_line_data(&ed->buf, r),
-                buffer_line_len(&ed->buf, r),
-                ed->screen_cols);
+        render_wrap_cursor_pos(line, line_len, ed->screen_cols, cy_ci,
+                               ed->cx, &wrap_row, &wrap_col);
         vis_y += wrap_row;
         move(vis_y, wrap_col);
     } else {

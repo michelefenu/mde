@@ -624,6 +624,46 @@ void render_draw_line(int screen_y, int screen_cols,
 }
 
 /* ================================================================
+ *  Content indent for hanging-indent wrapping
+ * ================================================================ */
+
+/* Returns the display-column width of the prefix for list/blockquote lines,
+   used for hanging indent in word-wrap mode. */
+int render_line_content_indent(const char *text, int len, BlockType btype)
+{
+    int i = 0;
+    switch (btype) {
+    case BLOCK_LIST_UNORDERED:
+        /* skip leading spaces + marker char + space */
+        while (i < len && text[i] == ' ') i++;
+        if (i < len && (text[i] == '-' || text[i] == '*' || text[i] == '+')) {
+            i++;
+            if (i < len && text[i] == ' ') i++;
+        }
+        return render_byte_to_col(text, len, i);
+    case BLOCK_LIST_ORDERED:
+        /* skip leading spaces + digits + '.'/')' + space */
+        while (i < len && text[i] == ' ') i++;
+        while (i < len && isdigit((unsigned char)text[i])) i++;
+        if (i < len && (text[i] == '.' || text[i] == ')')) {
+            i++;
+            if (i < len && text[i] == ' ') i++;
+        }
+        return render_byte_to_col(text, len, i);
+    case BLOCK_BLOCKQUOTE:
+        /* skip leading spaces + '>' + space */
+        while (i < len && text[i] == ' ') i++;
+        if (i < len && text[i] == '>') {
+            i++;
+            if (i < len && text[i] == ' ') i++;
+        }
+        return render_byte_to_col(text, len, i);
+    default:
+        return 0;
+    }
+}
+
+/* ================================================================
  *  Word-wrap helpers
  * ================================================================ */
 
@@ -649,39 +689,46 @@ static int find_word_break(const char *text, int start, int len,
     return len;
 }
 
-int render_wrap_height(const char *text, int len, int cols)
+int render_wrap_height(const char *text, int len, int cols,
+                       int content_indent)
 {
     if (cols <= 0) return 1;
     int rows = 0, i = 0;
     do {
+        int avail = (rows == 0) ? cols : cols - content_indent;
+        if (avail <= 0) avail = 1;
         int next;
-        find_word_break(text, i, len, cols, &next);
+        find_word_break(text, i, len, avail, &next);
         rows++; i = next;
     } while (i < len);
     return rows;
 }
 
-void render_wrap_cursor_pos(const char *text, int len, int cols, int cx,
+void render_wrap_cursor_pos(const char *text, int len, int cols,
+                             int content_indent, int cx,
                              int *out_row, int *out_col)
 {
     int row = 0, i = 0;
     do {
-        int next, end = find_word_break(text, i, len, cols, &next);
+        int avail = (row == 0) ? cols : cols - content_indent;
+        if (avail <= 0) avail = 1;
+        int next, end = find_word_break(text, i, len, avail, &next);
         if (cx <= end || next >= len) {
             *out_row = row;
             *out_col = render_byte_to_col(text, len, cx)
                      - render_byte_to_col(text, len, i);
+            if (row > 0) *out_col += content_indent;
             return;
         }
         i = next; row++;
     } while (i < len);
-    *out_row = row; *out_col = 0;
+    *out_row = row; *out_col = content_indent;
 }
 
 int render_draw_line_wrapped(int screen_y, int screen_cols,
                              const char *text, int len,
                              BlockType btype, int hlevel,
-                             int max_rows)
+                             int max_rows, int content_indent)
 {
     CharStyle *styles = calloc(len + 1, sizeof(CharStyle));
     compute_styles(text, len, styles, btype, hlevel);
@@ -690,9 +737,15 @@ int render_draw_line_wrapped(int screen_y, int screen_cols,
     int i   = 0;
 
     do {
-        int next, end = find_word_break(text, i, len, screen_cols, &next);
+        int avail = (row == 0) ? screen_cols : screen_cols - content_indent;
+        if (avail <= 0) avail = 1;
+        int next, end = find_word_break(text, i, len, avail, &next);
         move(screen_y + row, 0);
         clrtoeol();
+
+        /* draw indent spaces on continuation rows */
+        if (row > 0 && content_indent > 0)
+            for (int k = 0; k < content_indent; k++) addch(' ');
 
         /* draw segment [i, end) character by character with styles */
         int j = i;
@@ -1348,20 +1401,49 @@ static int find_preview_word_break(PreviewLine *pl, int start,
     return pl->len;
 }
 
-/* Count leading indent spaces for hanging-indent in preview mode. */
+/* Count leading prefix width for hanging-indent in preview mode.
+   Recognises three preview prefix patterns:
+     [spaces] ACS_BULLET ' '   (unordered list)
+     [spaces] ACS_VLINE  ' '   (blockquote)
+     [spaces] digits '.'/')' ' '  (ordered list)
+   Returns 0 (no indent) for plain paragraphs. */
 static int preview_leading_indent(PreviewLine *pl)
 {
-    int indent = 0;
-    while (indent < pl->len && !pl->styles[indent].acs && pl->text[indent] == ' ')
-        indent++;
-    return indent;
+    int i = 0;
+    /* 1. Leading spaces */
+    while (i < pl->len && !pl->styles[i].acs && pl->text[i] == ' ')
+        i++;
+    int prefix_start = i;
+    /* 2. ACS marker (bullet or vline) */
+    if (i < pl->len && pl->styles[i].acs) {
+        i++;
+    }
+    /* 2b. Or ordered-list marker: digits + '.'/')' */
+    else if (i < pl->len && isdigit((unsigned char)pl->text[i])) {
+        while (i < pl->len && isdigit((unsigned char)pl->text[i])) i++;
+        if (i < pl->len && (pl->text[i] == '.' || pl->text[i] == ')')) i++;
+        else return 0;  /* not actually an ordered list marker */
+    }
+    else {
+        return prefix_start;  /* plain paragraph — indent to leading spaces */
+    }
+    /* 3. One trailing space after the marker */
+    if (i < pl->len && pl->text[i] == ' ' && !pl->styles[i].acs)
+        i++;
+    /* Sanity: must have advanced past prefix_start */
+    return (i > prefix_start) ? i : 0;
 }
 
-/* Returns 1 if the line contains any ACS box-drawing character (table line). */
+/* Returns 1 if the line contains table-specific ACS box-drawing characters.
+   Excludes PM_VLINE (blockquote bar) and PM_BULLET (list marker) which
+   appear in wrappable lines. */
 static int preview_line_is_table(PreviewLine *pl)
 {
-    for (int i = 0; i < pl->len; i++)
-        if (pl->styles[i].acs) return 1;
+    for (int i = 0; i < pl->len; i++) {
+        unsigned char acs = pl->styles[i].acs;
+        if (acs && acs != PM_VLINE && acs != PM_BULLET)
+            return 1;
+    }
     return 0;
 }
 
@@ -1427,8 +1509,17 @@ int preview_draw_line_wrapped(int screen_y, int screen_cols,
         move(screen_y + row, 0);
         clrtoeol();
 
-        if (row > 0 && indent > 0)
-            for (int k = 0; k < indent; k++) addch(' ');
+        if (row > 0 && indent > 0) {
+            for (int k = 0; k < indent; k++) {
+                if (k < pl->len && pl->styles[k].acs == PM_VLINE) {
+                    /* Replicate blockquote vertical bar */
+                    attr_t a = COLOR_PAIR(pl->styles[k].cpair) | pl->styles[k].attr;
+                    draw_acs_char(PM_VLINE, a);
+                } else {
+                    addch(' ');
+                }
+            }
+        }
 
         /* draw segment [i, end) */
         int j = i;

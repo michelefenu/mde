@@ -55,13 +55,16 @@ BlockType render_get_block_type(const char *line, int in_code_block);
 int       render_is_code_fence(const char *line);
 int       render_heading_level(const char *line);
 int       render_byte_to_col(const char *text, int len, int byte_pos);
-int       render_wrap_height(const char *text, int len, int cols);
-void      render_wrap_cursor_pos(const char *text, int len, int cols, int cx,
+int       render_line_content_indent(const char *text, int len, BlockType btype);
+int       render_wrap_height(const char *text, int len, int cols,
+                              int content_indent);
+void      render_wrap_cursor_pos(const char *text, int len, int cols,
+                                  int content_indent, int cx,
                                   int *out_row, int *out_col);
 int       render_draw_line_wrapped(int screen_y, int screen_cols,
                                    const char *text, int len,
                                    BlockType btype, int hlevel,
-                                   int max_rows);
+                                   int max_rows, int content_indent);
 
 /* ── Preview mode ── */
 
