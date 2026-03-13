@@ -1,5 +1,6 @@
 #include "editor.h"
 #include "render.h"
+#include "render_table.h"
 #include "utf8.h"
 #include "search.h"
 #include "help.h"
@@ -165,17 +166,26 @@ static void editor_scroll(Editor *ed)
                 int rl = buffer_line_len(&ed->buf, r);
                 BlockType rbt = render_get_block_type(rd, sc_code);
                 if (rbt == BLOCK_CODE_FENCE) sc_code = !sc_code;
-                int ci = render_line_content_indent(rd, rl, rbt);
-                vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
+                if (rbt == BLOCK_PARAGRAPH && is_table_line(rd, rl)) {
+                    vis_y += 1;
+                } else {
+                    int ci = render_line_content_indent(rd, rl, rbt);
+                    vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
+                }
             }
             /* Add cursor's sub-line within its own line */
             const char *cl = buffer_line_data(&ed->buf, ed->cy);
             int cl_len = buffer_line_len(&ed->buf, ed->cy);
             BlockType cy_bt = render_get_block_type(cl, sc_code);
-            int cy_ci = render_line_content_indent(cl, cl_len, cy_bt);
             int sub_row, sub_col;
-            render_wrap_cursor_pos(cl, cl_len, ed->screen_cols, cy_ci,
-                                   ed->cx, &sub_row, &sub_col);
+            if (cy_bt == BLOCK_PARAGRAPH && is_table_line(cl, cl_len)) {
+                sub_row = 0;
+                sub_col = render_byte_to_col(cl, cl_len, ed->cx);
+            } else {
+                int cy_ci = render_line_content_indent(cl, cl_len, cy_bt);
+                render_wrap_cursor_pos(cl, cl_len, ed->screen_cols, cy_ci,
+                                       ed->cx, &sub_row, &sub_col);
+            }
             vis_y += sub_row;
 
             if (vis_y >= ed->screen_rows) {
@@ -582,11 +592,18 @@ static void editor_draw_rows(Editor *ed)
 
             if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
 
-            int ci = render_line_content_indent(line, len, bt);
-            int remaining = ed->screen_rows - y;
-            int used = render_draw_line_wrapped(y, ed->screen_cols,
-                                                line, len, bt, hl,
-                                                remaining, ci);
+            int is_tbl = (bt == BLOCK_PARAGRAPH && is_table_line(line, len));
+            int used;
+            if (is_tbl) {
+                render_draw_line(y, ed->screen_cols, line, len, 0, bt, hl);
+                used = 1;
+            } else {
+                int ci = render_line_content_indent(line, len, bt);
+                int remaining = ed->screen_rows - y;
+                used = render_draw_line_wrapped(y, ed->screen_cols,
+                                                    line, len, bt, hl,
+                                                    remaining, ci);
+            }
             y += used;
             frow++;
         }
@@ -876,17 +893,26 @@ void editor_refresh_screen(Editor *ed)
             int rl = buffer_line_len(&ed->buf, r);
             BlockType rbt = render_get_block_type(rd, cur_code);
             if (rbt == BLOCK_CODE_FENCE) cur_code = !cur_code;
-            int ci = render_line_content_indent(rd, rl, rbt);
-            vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
+            if (rbt == BLOCK_PARAGRAPH && is_table_line(rd, rl)) {
+                vis_y += 1;
+            } else {
+                int ci = render_line_content_indent(rd, rl, rbt);
+                vis_y += render_wrap_height(rd, rl, ed->screen_cols, ci);
+            }
         }
 
         const char *line = buffer_line_data(&ed->buf, ed->cy);
         int line_len = buffer_line_len(&ed->buf, ed->cy);
         BlockType cy_bt = render_get_block_type(line, cur_code);
-        int cy_ci = render_line_content_indent(line, line_len, cy_bt);
         int wrap_row, wrap_col;
-        render_wrap_cursor_pos(line, line_len, ed->screen_cols, cy_ci,
-                               ed->cx, &wrap_row, &wrap_col);
+        if (cy_bt == BLOCK_PARAGRAPH && is_table_line(line, line_len)) {
+            wrap_row = 0;
+            wrap_col = render_byte_to_col(line, line_len, ed->cx);
+        } else {
+            int cy_ci = render_line_content_indent(line, line_len, cy_bt);
+            render_wrap_cursor_pos(line, line_len, ed->screen_cols, cy_ci,
+                                   ed->cx, &wrap_row, &wrap_col);
+        }
         vis_y += wrap_row;
         move(vis_y, wrap_col);
     } else {

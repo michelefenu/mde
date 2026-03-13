@@ -1434,17 +1434,22 @@ static int preview_leading_indent(PreviewLine *pl)
     return (i > prefix_start) ? i : 0;
 }
 
-/* Returns 1 if the line contains table-specific ACS box-drawing characters.
-   Excludes PM_VLINE (blockquote bar) and PM_BULLET (list marker) which
-   appear in wrappable lines. */
+/* Returns 1 if the line is a table row.
+   Table borders use HLINE/corners/tees; table content rows have multiple
+   PM_VLINE (column separators).  Blockquotes have exactly one PM_VLINE
+   (the left bar) and list items have a single PM_BULLET. */
 static int preview_line_is_table(PreviewLine *pl)
 {
+    int vline_count = 0;
     for (int i = 0; i < pl->len; i++) {
         unsigned char acs = pl->styles[i].acs;
-        if (acs && acs != PM_VLINE && acs != PM_BULLET)
-            return 1;
+        if (!acs) continue;
+        if (acs != PM_VLINE && acs != PM_BULLET)
+            return 1;  /* HLINE, corner, tee → definitely a table */
+        if (acs == PM_VLINE)
+            vline_count++;
     }
-    return 0;
+    return vline_count >= 2;  /* multiple vlines → table content row */
 }
 
 int preview_wrap_height(PreviewLine *pl, int cols)
