@@ -40,7 +40,15 @@ void editor_toggle_preview(Editor *ed)
     ed->search_query_len = 0;
 
     if (ed->preview_mode) {
-        /* Leave preview → edit */
+        /* Leave preview → edit: sync scroll position back */
+        if (ed->preview_scroll_y < ed->preview_buf.num_lines) {
+            int src = ed->preview_buf.lines[ed->preview_scroll_y].source_row;
+            ed->scroll_y = src;
+            if (ed->cy < ed->scroll_y)
+                ed->cy = ed->scroll_y;
+            else if (ed->cy >= ed->scroll_y + ed->screen_rows)
+                ed->cy = ed->scroll_y;
+        }
         preview_free(&ed->preview_buf);
         ed->preview_mode = 0;
         curs_set(1);

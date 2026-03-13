@@ -225,9 +225,14 @@ static void apply_emphasis(const char *text, int len,
 
         if (n < dcount) { i += n; continue; }
 
+        /* Skip * runs that immediately follow '/': these are C comment openers
+           and must not be parsed as emphasis delimiters. */
+        if (ch == '*' && start > 0 && text[start - 1] == '/') { i += n; continue; }
+
         int close = find_close_delim(text, len, start + dcount,
                                      ch, dcount, claimed);
         if (close < 0) { i += n; continue; }
+        if (close == start + dcount) { i += n; continue; } /* empty span */
 
         /* Opening delimiters → dimmed */
         for (int j = start; j < start + dcount; j++) {
@@ -1058,16 +1063,32 @@ static void gen_code_block(PreviewBuffer *pb, Buffer *buf,
         char *line = buffer_line_data(buf, r);
         int   len  = buffer_line_len(buf, r);
         int   dw   = utf8_display_width(line, len);
-        int   pad  = box_w - dw;
-        if (pad < 0) pad = 0;
+
+        /* Truncate content to box_w display columns so the right border
+           always aligns, even when a line is wider than the box. */
+        int write_len = len;
+        int content_dw = dw;
+        if (dw > box_w) {
+            write_len  = 0;
+            content_dw = 0;
+            while (write_len < len) {
+                int clen = utf8_char_bytes(line, len, write_len);
+                int w    = utf8_char_width(line, len, write_len);
+                if (content_dw + w > box_w) break;
+                content_dw += w;
+                write_len  += clen;
+            }
+        }
+
+        int pad = box_w - content_dw;
         /* byte length of this preview line: indent + borders/spaces + content bytes + padding */
-        int line_bytes = body_indent + 4 + len + pad;
+        int line_bytes = body_indent + 4 + write_len + pad;
 
         PreviewLine *pl = pv_add(pb, r, line_bytes);
         int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
         pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
-        for (int j = 0; j < len; j++) {
+        for (int j = 0; j < write_len; j++) {
             pl->text[p]         = line[j];
             pl->styles[p].cpair = CP_CODE_BLOCK;
             p++;
