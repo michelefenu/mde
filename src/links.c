@@ -6,10 +6,17 @@
 int links_collect(Buffer *buf, LinkInfo *out, int max)
 {
     int count = 0;
+    int in_code = 0;
 
     for (int row = 0; row < buf->num_lines && count < max; row++) {
         const char *line = buffer_line_data(buf, row);
         int len = buffer_line_len(buf, row);
+
+        if (render_is_code_fence(line)) {
+            in_code = !in_code;
+            continue;
+        }
+        if (in_code) continue;
 
         for (int i = 0; i < len && count < max; ) {
             if (line[i] != '[') { i++; continue; }
@@ -82,9 +89,17 @@ static void slugify(const char *src, char *dst, int dst_size)
 int links_find_anchor(Buffer *buf, const char *anchor)
 {
     char slug[512];
+    int in_code = 0;
 
     for (int row = 0; row < buf->num_lines; row++) {
         const char *line = buffer_line_data(buf, row);
+
+        if (render_is_code_fence(line)) {
+            in_code = !in_code;
+            continue;
+        }
+        if (in_code) continue;
+
         int level = render_heading_level(line);
         if (level == 0) continue;
 

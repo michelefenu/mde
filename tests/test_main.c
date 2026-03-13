@@ -510,6 +510,40 @@ static void test_links_find_anchor_missing(void)
     buffer_free(&buf);
 }
 
+static void test_links_find_anchor_skips_code_blocks(void)
+{
+    const char *lines[] = {
+        "# Real Heading",
+        "```bash",
+        "# Not a heading",
+        "```",
+        "## Second Heading"
+    };
+    Buffer buf = make_buf(lines, 5);
+    assert(links_find_anchor(&buf, "not-a-heading") == -1);
+    assert(links_find_anchor(&buf, "real-heading") == 0);
+    assert(links_find_anchor(&buf, "second-heading") == 4);
+    buffer_free(&buf);
+}
+
+static void test_links_collect_skips_code_blocks(void)
+{
+    const char *lines[] = {
+        "[real](https://real.example)",
+        "```",
+        "[fake](https://fake.example)",
+        "```",
+        "[also real](https://also.example)"
+    };
+    Buffer buf = make_buf(lines, 5);
+    LinkInfo out[16];
+    int count = links_collect(&buf, out, 16);
+    assert(count == 2);
+    assert(strcmp(out[0].text, "real") == 0);
+    assert(strcmp(out[1].text, "also real") == 0);
+    buffer_free(&buf);
+}
+
 /* ================================================================
  *  main
  * ================================================================ */
@@ -552,6 +586,8 @@ int main(void)
     test_links_collect_anchor();
     test_links_find_anchor();
     test_links_find_anchor_missing();
+    test_links_find_anchor_skips_code_blocks();
+    test_links_collect_skips_code_blocks();
 
     printf("All tests passed.\n");
     return 0;
