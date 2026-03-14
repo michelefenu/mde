@@ -1,7 +1,5 @@
 #include "command.h"
 #include "links.h"
-#include "search.h"
-#include "help.h"
 #include "preview_ui.h"
 #include <ncurses.h>
 #include <stdlib.h>
@@ -32,13 +30,9 @@ static void open_url(Editor *ed, const char *url)
         editor_set_status(ed, "Opened: %s", url);
 }
 
-static int command_tab_complete(char *buf, int buflen, int maxlen)
+int command_file_tab_complete(char *buf, int buflen, int maxlen)
 {
-    /* Only complete for "e <partial>" */
-    if (buflen < 2 || buf[0] != 'e' || buf[1] != ' ')
-        return buflen;
-
-    const char *partial = buf + 2;
+    const char *partial = buf;
 
     /* Split partial into directory and basename */
     char dir[512]  = ".";
@@ -118,118 +112,96 @@ static int command_tab_complete(char *buf, int buflen, int maxlen)
         }
     }
 
-    int newlen = snprintf(buf, (size_t)maxlen, "e %s", suffix);
+    int newlen = snprintf(buf, (size_t)maxlen, "%s", suffix);
     if (newlen < 0 || newlen >= maxlen) return buflen;
     return newlen;
 }
 
-void editor_command_mode(Editor *ed)
+void editor_open_file_prompt(Editor *ed)
 {
-    char *input = editor_prompt(ed, ":", NULL, command_tab_complete);
+    char *filename = editor_prompt(ed, "Open file: ", NULL,
+                                   command_file_tab_complete);
+    if (!filename) {
+        editor_set_status(ed, "");
+        return;
+    }
+
+    /* Strip leading whitespace */
+    char *fn = filename;
+    while (*fn && isspace((unsigned char)*fn)) fn++;
+
+    if (!*fn) {
+        editor_set_status(ed, "No filename given");
+        free(filename);
+        return;
+    }
+
+    if (ed->dirty) {
+        editor_set_status(ed, "Unsaved changes — save first (Ctrl+S)");
+        free(filename);
+        return;
+    }
+
+    /* Exit preview if active, reload file, re-enter preview */
+    int was_preview = ed->preview_mode;
+    if (was_preview) editor_toggle_preview(ed);
+
+    buffer_free(&ed->buf);
+    buffer_init(&ed->buf);
+    undo_stack_clear(&ed->undo);
+    undo_stack_clear(&ed->redo);
+    ed->cx = 0;
+    ed->cy = 0;
+    ed->scroll_y = 0;
+    ed->scroll_x = 0;
+    ed->dirty = 0;
+    ed->search_query[0] = '\0';
+    ed->search_query_len = 0;
+    editor_open(ed, fn);
+
+    if (was_preview) editor_toggle_preview(ed);
+
+    free(filename);
+}
+
+void editor_open_link_prompt(Editor *ed)
+{
+    char *input = editor_prompt(ed, "Link #: ", NULL, NULL);
     if (!input) {
         editor_set_status(ed, "");
         return;
     }
 
-    /* Strip leading/trailing whitespace */
-    char *cmd = input;
-    while (*cmd && isspace((unsigned char)*cmd)) cmd++;
-    char *end = cmd + strlen(cmd) - 1;
-    while (end > cmd && isspace((unsigned char)*end)) *end-- = '\0';
+    int idx = atoi(input);
+    free(input);
 
-    if (strcmp(cmd, "w") == 0) {
-        editor_save(ed);
-    } else if (strcmp(cmd, "q") == 0) {
-        if (ed->dirty) {
-            editor_set_status(ed, "Unsaved changes, use :q! to force");
-        } else {
-            ed->quit = 1;
-        }
-    } else if (strcmp(cmd, "q!") == 0) {
-        ed->quit = 1;
-    } else if (strcmp(cmd, "wq") == 0 || strcmp(cmd, "x") == 0) {
-        editor_save(ed);
-        if (!ed->dirty)
-            ed->quit = 1;
-    } else if (strncmp(cmd, "e ", 2) == 0) {
-        char *filename = cmd + 2;
-        while (*filename && isspace((unsigned char)*filename)) filename++;
-        if (*filename) {
-            if (ed->dirty) {
-                editor_set_status(ed,
-                    "Unsaved changes, save first or use :q! to quit");
-            } else {
-                /* Exit preview, reload file, re-enter preview */
-                editor_toggle_preview(ed);
-                buffer_free(&ed->buf);
-                buffer_init(&ed->buf);
-                undo_stack_clear(&ed->undo);
-                undo_stack_clear(&ed->redo);
-                ed->cx = 0;
-                ed->cy = 0;
-                ed->scroll_y = 0;
-                ed->scroll_x = 0;
-                ed->dirty = 0;
-                ed->search_query[0] = '\0';
-                ed->search_query_len = 0;
-                editor_open(ed, filename);
-                editor_toggle_preview(ed);
-            }
-        } else {
-            editor_set_status(ed, "Usage: :e <filename>");
-        }
-    } else if (strcmp(cmd, "set wrap") == 0) {
-        ed->word_wrap = 1;
-        editor_set_status(ed, "Word wrap ON");
-    } else if (strcmp(cmd, "set nowrap") == 0) {
-        ed->word_wrap = 0;
-        editor_set_status(ed, "Word wrap OFF");
-    } else if (strcmp(cmd, "help") == 0) {
-        editor_show_help(ed);
-    } else if (strncmp(cmd, "open ", 5) == 0) {
-        int idx = atoi(cmd + 5);
-        if (idx <= 0) {
-            editor_set_status(ed, "Usage: :open N  (N >= 1)");
-        } else {
-            LinkInfo links[MAX_LINKS];
-            int count = links_collect(&ed->buf, links, MAX_LINKS);
-            if (idx > count) {
-                editor_set_status(ed, "No link %d (document has %d link%s)",
-                                  idx, count, count == 1 ? "" : "s");
-            } else {
-                const char *url = links[idx - 1].url;
-                if (url[0] == '#') {
-                    /* Internal anchor — scroll preview */
-                    int row = links_find_anchor(&ed->buf, url + 1);
-                    if (row < 0) {
-                        editor_set_status(ed, "Anchor not found: %s", url);
-                    } else {
-                        if (!ed->preview_mode) editor_toggle_preview(ed);
-                        ed->preview_scroll_y =
-                            preview_find_line(&ed->preview_buf, row);
-                        clamp_preview_scroll(ed);
-                        editor_set_status(ed, "Jumped to: %s", url);
-                    }
-                } else {
-                    open_url(ed, url);
-                }
-            }
-        }
-    } else {
-        /* Try as line number */
-        int line = atoi(cmd);
-        if (line > 0) {
-            if (line > ed->buf.num_lines) line = ed->buf.num_lines;
-            /* Exit preview, jump, re-enter preview */
-            editor_toggle_preview(ed);
-            ed->cy = line - 1;
-            ed->cx = 0;
-            editor_toggle_preview(ed);
-            editor_set_status(ed, "Jumped to line %d", line);
-        } else {
-            editor_set_status(ed, "Not a command: %s", cmd);
-        }
+    if (idx <= 0) {
+        editor_set_status(ed, "Enter a link number (1, 2, ...)");
+        return;
     }
 
-    free(input);
+    LinkInfo links[MAX_LINKS];
+    int count = links_collect(&ed->buf, links, MAX_LINKS);
+    if (idx > count) {
+        editor_set_status(ed, "No link %d (document has %d link%s)",
+                          idx, count, count == 1 ? "" : "s");
+        return;
+    }
+
+    const char *url = links[idx - 1].url;
+    if (url[0] == '#') {
+        /* Internal anchor — scroll preview */
+        int row = links_find_anchor(&ed->buf, url + 1);
+        if (row < 0) {
+            editor_set_status(ed, "Anchor not found: %s", url);
+        } else {
+            if (!ed->preview_mode) editor_toggle_preview(ed);
+            ed->preview_scroll_y =
+                preview_find_line(&ed->preview_buf, row);
+            clamp_preview_scroll(ed);
+            editor_set_status(ed, "Jumped to: %s", url);
+        }
+    } else {
+        open_url(ed, url);
+    }
 }

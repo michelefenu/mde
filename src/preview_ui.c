@@ -62,7 +62,7 @@ void editor_toggle_preview(Editor *ed)
         ed->preview_scroll_y = preview_find_line(&ed->preview_buf,
                                                  ed->scroll_y);
         curs_set(0);
-        editor_set_status(ed, "-- NORMAL --");
+        editor_set_status(ed, "-- PREVIEW --");
     }
 }
 
@@ -79,13 +79,13 @@ void editor_preview_process_key(Editor *ed, int c)
         break;
 
     /* ── Search ── */
-    case '/':
+    case CTRL_KEY('f'):
         editor_search(ed);
         ed->preview_scroll_y = preview_find_line(&ed->preview_buf, ed->cy);
         clamp_preview_scroll(ed);
         break;
 
-    case 'n':
+    case CTRL_KEY('n'):
         if (ed->search_query_len == 0) {
             editor_set_status(ed, "No search query");
             break;
@@ -95,19 +95,60 @@ void editor_preview_process_key(Editor *ed, int c)
         clamp_preview_scroll(ed);
         break;
 
-    case 'N':
-        if (ed->search_query_len == 0) {
-            editor_set_status(ed, "No search query");
-            break;
-        }
-        editor_search_prev(ed);
+    /* ── Save ── */
+    case CTRL_KEY('s'):
+        editor_save(ed);
+        break;
+
+    /* ── Go to line ── */
+    case CTRL_KEY('g'):
+        editor_goto_line(ed);
         ed->preview_scroll_y = preview_find_line(&ed->preview_buf, ed->cy);
         clamp_preview_scroll(ed);
         break;
 
-    /* ── Command mode ── */
-    case ':':
-        editor_command_mode(ed);
+    /* ── Undo ── */
+    case CTRL_KEY('z'):
+        editor_undo(ed);
+        /* Regenerate preview buffer to reflect undo changes */
+        {
+            int src = (ed->preview_scroll_y < ed->preview_buf.num_lines)
+                      ? ed->preview_buf.lines[ed->preview_scroll_y].source_row
+                      : 0;
+            preview_free(&ed->preview_buf);
+            getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+            ed->screen_rows -= 2;
+            preview_generate(&ed->preview_buf, &ed->buf, ed->screen_cols);
+            ed->preview_scroll_y = preview_find_line(&ed->preview_buf, src);
+            clamp_preview_scroll(ed);
+        }
+        break;
+
+    /* ── Redo ── */
+    case CTRL_KEY('y'):
+        editor_redo(ed);
+        /* Regenerate preview buffer to reflect redo changes */
+        {
+            int src = (ed->preview_scroll_y < ed->preview_buf.num_lines)
+                      ? ed->preview_buf.lines[ed->preview_scroll_y].source_row
+                      : 0;
+            preview_free(&ed->preview_buf);
+            getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
+            ed->screen_rows -= 2;
+            preview_generate(&ed->preview_buf, &ed->buf, ed->screen_cols);
+            ed->preview_scroll_y = preview_find_line(&ed->preview_buf, src);
+            clamp_preview_scroll(ed);
+        }
+        break;
+
+    /* ── Open file ── */
+    case CTRL_KEY('o'):
+        editor_open_file_prompt(ed);
+        break;
+
+    /* ── Open link by number ── */
+    case CTRL_KEY('l'):
+        editor_open_link_prompt(ed);
         break;
 
     /* ── Quit ── */
@@ -151,16 +192,11 @@ void editor_preview_process_key(Editor *ed, int c)
         break;
 
     case KEY_UP:
-    case 'k':
         ed->preview_scroll_y--;
         clamp_preview_scroll(ed);
         break;
 
     case KEY_DOWN:
-    case 'j':
-    case '\r':
-    case '\n':
-    case KEY_ENTER:
         ed->preview_scroll_y++;
         clamp_preview_scroll(ed);
         break;
@@ -171,18 +207,15 @@ void editor_preview_process_key(Editor *ed, int c)
         break;
 
     case KEY_NPAGE:
-    case ' ':
         ed->preview_scroll_y += ed->screen_rows;
         clamp_preview_scroll(ed);
         break;
 
     case KEY_HOME:
-    case 'g':
         ed->preview_scroll_y = 0;
         break;
 
     case KEY_END:
-    case 'G':
         ed->preview_scroll_y = ed->preview_buf.num_lines - ed->screen_rows;
         clamp_preview_scroll(ed);
         break;

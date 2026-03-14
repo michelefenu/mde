@@ -150,7 +150,7 @@ void editor_show_toc(Editor *ed)
 
     ed->toc_mode = 1;
     curs_set(0);
-    editor_set_status(ed, "TOC — j/k navigate, Enter jump, q close");
+    editor_set_status(ed, "TOC — Up/Down navigate, Enter jump, Esc close");
 }
 
 void editor_close_toc(Editor *ed)
@@ -160,7 +160,7 @@ void editor_close_toc(Editor *ed)
 
     if (ed->toc_was_preview) {
         curs_set(0);
-        editor_set_status(ed, "Preview mode — Ctrl+P or q to return");
+        editor_set_status(ed, "Preview mode — Ctrl+P to edit");
     } else {
         curs_set(1);
         editor_set_status(ed, "");
@@ -176,7 +176,6 @@ void editor_toc_process_key(Editor *ed, int c)
     int n = ed->toc_buf.num_lines;
 
     switch (c) {
-    case 'q':
     case 27:   /* Escape */
         editor_close_toc(ed);
         break;
@@ -186,7 +185,6 @@ void editor_toc_process_key(Editor *ed, int c)
         break;
 
     case KEY_UP:
-    case 'k':
         if (ed->toc_selected > 0) {
             ed->toc_selected--;
             toc_clamp_scroll(ed);
@@ -194,7 +192,6 @@ void editor_toc_process_key(Editor *ed, int c)
         break;
 
     case KEY_DOWN:
-    case 'j':
         if (ed->toc_selected < n - 1) {
             ed->toc_selected++;
             toc_clamp_scroll(ed);

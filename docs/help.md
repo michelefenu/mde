@@ -1,40 +1,40 @@
 # mde
 
-**mde** is a small, terminal-based markdown editor with two modes: **normal mode** (read-only formatted preview) and **edit mode** (raw markdown editing). The editor starts in normal mode. Press `Ctrl+P` to toggle between modes. Files are always saved as raw markdown (`.md`).
+**mde** is a small, terminal-based markdown editor with two modes: **preview mode** (read-only formatted preview) and **edit mode** (raw markdown editing). The editor starts in preview mode. Press `Ctrl+P` to toggle between modes. Files are always saved as raw markdown (`.md`).
 
-A status bar shows the filename, cursor position, line count, and the current mode indicator (`[NORMAL]` or `[+]` for unsaved changes). Markdown delimiters (`#`, `*`, `` ` ``, etc.) are shown in a muted colour in edit mode so the content stands out.
+A status bar shows the filename, cursor position, line count, and the current mode indicator (`[PREVIEW]` or `[+]` for unsaved changes). Markdown delimiters (`#`, `*`, `` ` ``, etc.) are shown in a muted colour in edit mode so the content stands out.
 
-## NORMAL MODE
+## PREVIEW MODE
 
-Normal mode shows a read-only rendered view of the document with syntax markers hidden. Use vim-style keys to navigate and enter commands.
+Preview mode shows a read-only rendered view of the document with syntax markers hidden.
 
 | Key              | Action                          |
 |------------------|---------------------------------|
 | Ctrl+P           | Toggle to edit mode             |
-| /                | Search (highlights matches in preview) |
-| n                | Find next match (scrolls preview)    |
-| N                | Find previous match (scrolls preview) |
-| :                | Enter command mode              |
-| u                | Undo                            |
-| Ctrl+R           | Redo                            |
-| j / Down         | Scroll down one line            |
-| k / Up           | Scroll up one line              |
-| Space / Page Dn  | Scroll down one page            |
-| Page Up          | Scroll up one page              |
-| g / Home         | Jump to top                     |
-| G / End          | Jump to bottom                  |
+| Ctrl+F           | Search (highlights matches)     |
+| Ctrl+N           | Find next match                 |
+| Ctrl+S           | Save file                       |
+| Ctrl+G           | Go to line number               |
+| Ctrl+Z           | Undo                            |
+| Ctrl+Y           | Redo                            |
+| Ctrl+O           | Open a different file           |
+| Ctrl+L           | Open link by number             |
 | Ctrl+T           | Open Table of Contents          |
 | Ctrl+W           | Toggle word wrap                |
 | Ctrl+Q           | Quit (press twice if unsaved)   |
+| Arrow Up / Down  | Scroll one line                 |
+| Page Up / Down   | Scroll one page                 |
+| Shift+Up / Down  | Scroll 10 lines                 |
+| Home / End       | Jump to top / bottom            |
 | F1               | Show this help                  |
 
 ## EDIT MODE
 
-Edit mode lets you edit the raw markdown text. Press `Ctrl+P` to return to normal mode.
+Edit mode lets you edit the raw markdown text. Press `Ctrl+P` or `Escape` to return to preview mode.
 
 | Key            | Action                          |
 |----------------|---------------------------------|
-| Ctrl+P         | Toggle to normal mode           |
+| Ctrl+P         | Toggle to preview mode          |
 | Ctrl+S         | Save file                       |
 | Ctrl+Q         | Quit (press twice if unsaved)   |
 | Ctrl+Z         | Undo                            |
@@ -42,48 +42,32 @@ Edit mode lets you edit the raw markdown text. Press `Ctrl+P` to return to norma
 | Ctrl+F         | Search                          |
 | Ctrl+N         | Find next match                 |
 | Ctrl+G         | Go to line number               |
+| Ctrl+O         | Open a different file           |
+| Ctrl+L         | Open link by number             |
 | Ctrl+T         | Open Table of Contents          |
 | Ctrl+W         | Toggle word wrap                |
 | Ctrl+K         | Delete to end of line           |
 | Ctrl+A         | Move to beginning of line       |
 | Ctrl+E         | Move to end of line             |
-| Ctrl+L         | Refresh screen                  |
 | Ctrl+H         | Delete character (backspace)    |
 | Tab            | Insert 4 spaces                 |
 | Arrow keys     | Move cursor                     |
+| Shift+Up / Down | Move 10 lines                  |
 | Home / End     | Beginning / end of line         |
 | Page Up / Down | Scroll by screen height         |
+| Escape         | Switch to preview mode          |
 | F1             | Show this help                  |
-
-## COMMAND MODE
-
-Press `:` in normal mode to enter command mode. Type a command and press Enter.
-
-| Command        | Action                          |
-|----------------|---------------------------------|
-| :w             | Save file                       |
-| :q             | Quit (fails if unsaved)         |
-| :q!            | Force quit without saving       |
-| :wq            | Save and quit                   |
-| :x             | Save and quit (same as :wq)     |
-| :e *filename*  | Open a different file           |
-| :set wrap      | Enable word wrap                |
-| :set nowrap    | Disable word wrap               |
-| :help          | Show this help                  |
-| :open *N*      | Open link N (browser or anchor) |
-| :*number*      | Jump to line number             |
 
 ## TOC MODE
 
-TOC mode shows a navigable Table of Contents listing all headings in the document. Open it with Ctrl+T from normal or edit mode. Pressing Enter jumps to the selected heading (in normal mode the preview scrolls to it; in edit mode the heading moves to the top of the screen).
+TOC mode shows a navigable Table of Contents listing all headings in the document. Open it with Ctrl+T from preview or edit mode. Pressing Enter jumps to the selected heading (in preview mode the preview scrolls to it; in edit mode the heading moves to the top of the screen).
 
-| Key      | Action                              |
-|----------|-------------------------------------|
-| j / Down | Move selection down                 |
-| k / Up   | Move selection up                   |
-| Enter    | Jump cursor to heading, close TOC   |
-| q / Esc  | Close TOC without jumping           |
-| Ctrl+Q   | Quit                                |
+| Key        | Action                              |
+|------------|-------------------------------------|
+| Up / Down  | Move selection                      |
+| Enter      | Jump cursor to heading, close TOC   |
+| Esc        | Close TOC without jumping           |
+| Ctrl+Q     | Quit                                |
 
 ## SUPPORTED MARKDOWN
 

@@ -1,6 +1,6 @@
 # mde sample file
 
-**mde** is a terminal Markdown editor with two modes: **normal mode** (rendered
+**mde** is a terminal Markdown editor with two modes: **preview mode** (rendered
 preview) and **edit mode** (raw Markdown). Press `Ctrl+P` to switch between them.
 
 ---
@@ -9,7 +9,7 @@ preview) and **edit mode** (raw Markdown). Press `Ctrl+P` to switch between them
 
 Regular text with **bold**, *italic*, ***bold and italic***, ~~strikethrough~~,
 and `inline code`. Links are [underlined](https://github.com) with a dimmed URL,
-and you can jump to them with `:open N` — this is link (1).
+and you can jump to them with `Ctrl+L` — this is link (1).
 
 ---
 
@@ -32,9 +32,9 @@ External link: [mde on GitHub](https://github.com/michelefenu/mde)
 
 Internal anchor: [Jump to Code section](#code)
 
-In normal mode, link numbers appear after link text as `(N)`. Type `:open 1` to
-open the external link in your browser, or `:open 2` to scroll to the Code
-section heading.
+In preview mode, link numbers appear after link text as `(N)`. Press `Ctrl+L`
+and enter `1` to open the external link in your browser, or `2` to scroll to
+the Code section heading.
 
 ---
 
@@ -103,14 +103,14 @@ make
 
 Tables render with plain pipes in edit mode and box-drawing borders in preview mode.
 
-| Feature               | Edit mode | Normal mode |
-|-----------------------|-----------|-------------|
-| Syntax styling        | yes       | yes         |
-| Hidden delimiters     | no        | yes         |
-| Box-drawing borders   | no        | yes         |
-| Coloured links        | yes       | yes         |
-| Link numbers `(N)`    | no        | yes         |
-| Word wrap             | yes       | yes         |
+| Feature               | Edit mode | Preview mode |
+|-----------------------|-----------|--------------|
+| Syntax styling        | yes       | yes          |
+| Hidden delimiters     | no        | yes          |
+| Box-drawing borders   | no        | yes          |
+| Coloured links        | yes       | yes          |
+| Link numbers `(N)`    | no        | yes          |
+| Word wrap             | yes       | yes          |
 
 ---
 
@@ -135,43 +135,24 @@ ___
 
 ---
 
-## Command reference
-
-Press `:` in normal mode to enter a command:
-
-| Command       | Action                              |
-|---------------|-------------------------------------|
-| `:w`          | Save file                           |
-| `:q`          | Quit (fails if unsaved)             |
-| `:q!`         | Force quit without saving           |
-| `:wq` / `:x`  | Save and quit                       |
-| `:e filename` | Open a different file               |
-| `:open N`     | Open link N (browser or anchor)     |
-| `:set wrap`   | Enable word wrap                    |
-| `:set nowrap` | Disable word wrap                   |
-| `:help`       | Show built-in help                  |
-| `:N`          | Jump to line number N               |
-
 ## Key bindings reference
 
-| Key             | Normal mode               | Edit mode                      |
+| Key             | Preview mode              | Edit mode                      |
 |-----------------|---------------------------|--------------------------------|
-| `Ctrl+P`        | Switch to edit mode       | Switch to normal mode          |
-| `Ctrl+S`        | —                         | Save file                      |
+| `Ctrl+P`        | Switch to edit mode       | Switch to preview mode         |
+| `Ctrl+S`        | Save file                 | Save file                      |
 | `Ctrl+Q`        | Quit                      | Quit                           |
 | `Ctrl+W`        | Toggle word wrap          | Toggle word wrap               |
-| `/`             | Search                    | —                              |
-| `Ctrl+F`        | —                         | Search                         |
-| `n` / `N`       | Next / previous match     | —                              |
-| `Ctrl+N`        | —                         | Next match                     |
-| `j` / `k`       | Scroll down / up          | —                              |
-| `g` / `G`       | Jump to top / bottom      | —                              |
-| `Space`         | Scroll down one page      | —                              |
-| `Ctrl+T`        | Open Table of Contents    | Open Table of Contents         |
+| `Ctrl+F`        | Search                    | Search                         |
+| `Ctrl+N`        | Next match                | Next match                     |
+| `Ctrl+G`        | Go to line number         | Go to line number              |
 | `Ctrl+Z`        | Undo                      | Undo                           |
 | `Ctrl+Y`        | Redo                      | Redo                           |
-| `Ctrl+G`        | —                         | Go to line number              |
+| `Ctrl+O`        | Open file                 | Open file                      |
+| `Ctrl+L`        | Open link by number       | Open link by number            |
+| `Ctrl+T`        | Open Table of Contents    | Open Table of Contents         |
 | `Ctrl+K`        | —                         | Delete to end of line          |
 | `Ctrl+A` / Home | —                         | Beginning of line              |
 | `Ctrl+E` / End  | —                         | End of line                    |
+| `Escape`        | —                         | Switch to preview mode         |
 | `F1`            | Show help                 | Show help                      |

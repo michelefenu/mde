@@ -9,13 +9,14 @@ A terminal-based markdown editor written in C. Edit and preview markdown files w
 ## Features
 
 - **Live syntax styling**: headings, bold, italic, strikethrough, inline code, links, lists, blockquotes, code blocks, and horizontal rules are coloured and styled as you type; markdown delimiters are dimmed so the content stays readable
-- **Normal mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders; vim-style `/` search with highlighted matches and `n`/`N` navigation without leaving normal mode
+- **Preview mode**: Ctrl+P renders a read-only view with syntax markers hidden, man-page-style heading indentation, and box-drawing table borders; Ctrl+F search with highlighted matches and Ctrl+N navigation without leaving preview mode
 - **Todo items**: GFM-style task checkboxes (`- [ ]` open, `- [x]` done) with coloured styling; metadata tokens highlighted — `#tag`, `@assignee`, `~duration`, and `yyyy-mm-dd` dates
 - **List autocompletion**: pressing Enter on a list item starts the next item automatically — `- `, `* `, `+ ` for unordered; incremented numbers for ordered (`1.` → `2.`, `1)` → `2)`) with indentation preserved; pressing Enter on an empty list item exits the list
-- **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and normal mode
-- **Table of Contents**: Ctrl+T opens a navigable TOC panel listing all headings; press j/k to navigate, Enter to jump to the selected heading
-- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match; `/` search in normal mode with `n`/`N` navigation
+- **Word wrap**: Ctrl+W toggles character-level wrapping at the terminal width, in both edit and preview mode
+- **Table of Contents**: Ctrl+T opens a navigable TOC panel listing all headings; press Up/Down to navigate, Enter to jump to the selected heading
+- **Incremental search**: Ctrl+F with live match highlighting, Ctrl+N to jump to the next match — works in both edit and preview mode
 - **Undo/redo**: full undo history with Ctrl+Z / Ctrl+Y; operations like list continuation undo atomically
+- **Open files and links**: Ctrl+O to open a different file (with tab completion), Ctrl+L to open a link by number
 - **Status bar**: filename, cursor position, line count, dirty indicator
 
 ## Requirements
@@ -56,7 +57,7 @@ make clean
 
 | Key               | Action                                  |
 |-------------------|-----------------------------------------|
-| Ctrl+P         | Toggle to normal mode           |
+| Ctrl+P         | Toggle to preview mode          |
 | Ctrl+S         | Save file                       |
 | Ctrl+Q         | Quit (press twice if unsaved)   |
 | Ctrl+Z         | Undo                            |
@@ -64,61 +65,45 @@ make clean
 | Ctrl+F         | Search                          |
 | Ctrl+N         | Find next match                 |
 | Ctrl+G         | Go to line number               |
+| Ctrl+O         | Open a different file           |
+| Ctrl+L         | Open link by number             |
 | Ctrl+T         | Open Table of Contents          |
 | Ctrl+W         | Toggle word wrap                |
 | Ctrl+K         | Delete to end of line           |
 | Ctrl+A         | Move to beginning of line       |
 | Ctrl+E         | Move to end of line             |
-| Ctrl+L         | Refresh screen                  |
 | Ctrl+H         | Delete character (backspace)    |
 | Tab            | Insert 4 spaces                 |
 | Arrow keys     | Move cursor                     |
 | Home / End     | Beginning / end of line         |
 | Page Up / Down | Scroll by screen height         |
+| Escape         | Switch to preview mode          |
 | F1             | Show help                       |
 
-### Normal Mode
+### Preview Mode
 
 ![Preview mode](images/preview-mode.png)
-*Normal mode: read-only rendered view with vim-like keybindings*
+*Preview mode: read-only rendered view*
 
 | Key              | Action                                 |
 |------------------|----------------------------------------|
 | Ctrl+P           | Toggle to edit mode                    |
-| /                | Search (highlights matches in preview) |
-| n                | Find next match                        |
-| N                | Find previous match                    |
-| :                | Enter command mode                     |
-| u                | Undo                                   |
-| Ctrl+R           | Redo                                   |
-| j / Down         | Scroll down one line                   |
-| k / Up           | Scroll up one line                     |
-| Space / Page Dn  | Scroll down one page                   |
-| Page Up          | Scroll up one page                     |
-| g / Home         | Jump to top                            |
-| G / End          | Jump to bottom                         |
+| Ctrl+F           | Search (highlights matches)            |
+| Ctrl+N           | Find next match                        |
+| Ctrl+S           | Save file                              |
+| Ctrl+G           | Go to line number                      |
+| Ctrl+Z           | Undo                                   |
+| Ctrl+Y           | Redo                                   |
+| Ctrl+O           | Open a different file                  |
+| Ctrl+L           | Open link by number                    |
 | Ctrl+T           | Open Table of Contents                 |
 | Ctrl+W           | Toggle word wrap                       |
 | Ctrl+Q           | Quit (press twice if unsaved)          |
+| Arrow Up / Down  | Scroll one line                        |
+| Shift+Up / Down  | Scroll 10 lines                        |
+| Page Up / Down   | Scroll one page                        |
+| Home / End       | Jump to top / bottom                   |
 | F1               | Show help                              |
-
-### Command Mode
-
-Press `:` in normal mode to enter command mode.
-
-| Command       | Action                          |
-|---------------|---------------------------------|
-| :w            | Save file                       |
-| :q            | Quit (fails if unsaved)         |
-| :q!           | Force quit without saving       |
-| :wq           | Save and quit                   |
-| :x            | Save and quit (same as :wq)     |
-| :e *filename* | Open a different file           |
-| :set wrap     | Enable word wrap                |
-| :set nowrap   | Disable word wrap               |
-| :help         | Show help                       |
-| :open *N*     | Open link N (browser or anchor) |
-| :*number*     | Jump to line number             |
 
 ## Supported Markdown
 

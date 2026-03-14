@@ -6,6 +6,7 @@
 #include "help.h"
 #include "preview_ui.h"
 #include "toc.h"
+#include "command.h"
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -776,7 +777,7 @@ static void editor_draw_statusbar(Editor *ed)
         rlen = snprintf(right, sizeof(right), "%d%% (%d/%d) ",
                         pct, ed->help_scroll_y + 1, ed->help_buf.num_lines);
     } else if (ed->preview_mode) {
-        llen = snprintf(left, sizeof(left), " %s [NORMAL]",
+        llen = snprintf(left, sizeof(left), " %s [PREVIEW]",
                         ed->filename ? ed->filename : "[New File]");
         int cur = ed->preview_scroll_y + 1;
         int tot = ed->preview_buf.num_lines;
@@ -825,22 +826,21 @@ static void editor_draw_statusbar(Editor *ed)
         if (ed->search_query_len > 0 && !ed->toc_mode && !ed->help_mode) {
             if (ed->preview_mode) {
                 snprintf(search_hint, sizeof(search_hint),
-                         "Search: \"%s\"  |  n next  |  N prev  |  / new search",
+                         "Search: \"%s\"  |  Ctrl+N next  |  Ctrl+F new search",
                          ed->search_query);
             } else {
                 snprintf(search_hint, sizeof(search_hint),
-                         "Search: \"%s\"  |  Ctrl+N next  |  Esc Normal (n/N to navigate)",
+                         "Search: \"%s\"  |  Ctrl+N next  |  Esc Preview",
                          ed->search_query);
             }
             help = search_hint;
         } else if (ed->toc_mode)
-            help = "j/k Navigate | Enter Jump | q/Esc Close";
+            help = "Up/Down Navigate | Enter Jump | Esc Close";
         else if (ed->help_mode)
-            help = "j/k Scroll | Space PgDn | g/G Top/Bot | "
-                   "q/Esc Close";
+            help = "Up/Down Scroll | PgUp/PgDn Page | Esc Close";
         else if (ed->preview_mode)
-            help = "Ctrl+P Edit | / Search | :w Save | :q Quit | "
-                   "j/k Scroll | g/G Top/Bot | F1 Help";
+            help = "Ctrl+P Edit | Ctrl+F Search | Ctrl+S Save | "
+                   "Ctrl+Q Quit | F1 Help";
         else
             help = "Ctrl+P Preview | Ctrl+S Save | Ctrl+Z Undo | Ctrl+Y Redo | "
                    "Ctrl+F Search | Ctrl+T TOC | F1 Help";
@@ -1032,9 +1032,14 @@ static void editor_process_key(Editor *ed)
         ed->cx = buffer_line_len(&ed->buf, ed->cy);
         break;
 
-    /* ── Refresh ── */
+    /* ── Open link by number ── */
     case CTRL_KEY('l'):
-        clear();
+        editor_open_link_prompt(ed);
+        break;
+
+    /* ── Open file ── */
+    case CTRL_KEY('o'):
+        editor_open_file_prompt(ed);
         break;
 
     /* ── Help ── */
@@ -1080,7 +1085,7 @@ static void editor_process_key(Editor *ed)
     case KEY_RESIZE:
         break;
 
-    /* ── Escape: switch to normal mode ── */
+    /* ── Escape: switch to preview mode ── */
     case 27:
         editor_toggle_preview(ed);
         break;
@@ -1138,11 +1143,11 @@ void editor_run(Editor *ed)
     if (has_colors())
         render_init_colors();
 
-    /* Start in normal (preview) mode */
+    /* Start in preview mode */
     editor_toggle_preview(ed);
     editor_set_status(ed,
         "mde — Terminal Markdown Editor  |  "
-        ":q Quit  |  :w Save  |  i Insert  |  F1 Help");
+        "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Edit  |  F1 Help");
 
     while (!ed->quit) {
         editor_refresh_screen(ed);

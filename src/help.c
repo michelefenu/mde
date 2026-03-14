@@ -70,7 +70,7 @@ void editor_show_help(Editor *ed)
     ed->help_mode = 1;
     ed->help_scroll_y = 0;
     curs_set(0);
-    editor_set_status(ed, "Help — press q or Esc to close");
+    editor_set_status(ed, "Help — press Esc or F1 to close");
 }
 
 void editor_close_help(Editor *ed)
@@ -80,7 +80,7 @@ void editor_close_help(Editor *ed)
 
     if (ed->help_was_preview) {
         curs_set(0);
-        editor_set_status(ed, "Preview mode — Ctrl+P or q to return");
+        editor_set_status(ed, "Preview mode — Ctrl+P to edit");
     } else {
         curs_set(1);
         editor_set_status(ed, "");
@@ -90,7 +90,6 @@ void editor_close_help(Editor *ed)
 void editor_help_process_key(Editor *ed, int c)
 {
     switch (c) {
-    case 'q':
     case 27:
     case KEY_F(1):
         editor_close_help(ed);
@@ -107,16 +106,11 @@ void editor_help_process_key(Editor *ed, int c)
         break;
 
     case KEY_UP:
-    case 'k':
         ed->help_scroll_y--;
         clamp_help_scroll(ed);
         break;
 
     case KEY_DOWN:
-    case 'j':
-    case '\r':
-    case '\n':
-    case KEY_ENTER:
         ed->help_scroll_y++;
         clamp_help_scroll(ed);
         break;
@@ -127,18 +121,15 @@ void editor_help_process_key(Editor *ed, int c)
         break;
 
     case KEY_NPAGE:
-    case ' ':
         ed->help_scroll_y += ed->screen_rows;
         clamp_help_scroll(ed);
         break;
 
     case KEY_HOME:
-    case 'g':
         ed->help_scroll_y = 0;
         break;
 
     case KEY_END:
-    case 'G':
         ed->help_scroll_y = ed->help_buf.num_lines - ed->screen_rows;
         clamp_help_scroll(ed);
         break;
