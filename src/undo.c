@@ -1,3 +1,4 @@
+/* undo — Append-only undo stack: push, pop, clear operations. */
 #include "undo.h"
 #include "xalloc.h"
 #include <stdlib.h>

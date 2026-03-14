@@ -1,3 +1,4 @@
+/* render_table — Parse markdown tables, compute column widths, draw ACS borders. */
 #include "render_table.h"
 #include "utf8.h"
 #include <stdlib.h>

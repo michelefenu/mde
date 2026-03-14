@@ -1,3 +1,4 @@
+/* help — Help overlay: display embedded documentation. */
 #ifndef HELP_H
 #define HELP_H
 

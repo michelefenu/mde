@@ -1,3 +1,4 @@
+/* editor — Editor event loop, key dispatch, file I/O, prompt dialogs. */
 #include "editor.h"
 #include "render.h"
 #include "render_table.h"

@@ -1,3 +1,4 @@
+/* editor — Editor state, public API, and configuration macros. */
 #ifndef EDITOR_H
 #define EDITOR_H
 

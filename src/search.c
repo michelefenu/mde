@@ -1,3 +1,4 @@
+/* search — Forward/backward search with incremental highlighting. */
 #include "search.h"
 #include "preview_ui.h"
 #include <string.h>

@@ -1,3 +1,4 @@
+/* render — Markdown parsing, syntax highlighting, and preview generation. */
 #ifndef RENDER_H
 #define RENDER_H
 

@@ -1,3 +1,4 @@
+/* links — Markdown link extraction and heading anchor lookup. */
 #ifndef LINKS_H
 #define LINKS_H
 

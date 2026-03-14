@@ -1,3 +1,4 @@
+/* render — Block/inline markdown rendering to ncurses, preview buffer construction. */
 #include "render.h"
 #include "render_table.h"
 #include "utf8.h"

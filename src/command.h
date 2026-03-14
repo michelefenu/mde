@@ -1,3 +1,4 @@
+/* command — File-open and link-open commands with tab completion. */
 #ifndef COMMAND_H
 #define COMMAND_H
 

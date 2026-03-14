@@ -1,3 +1,4 @@
+/* command — File browser, URL/link dispatch, local-path file opening. */
 #include "command.h"
 #include "links.h"
 #include "preview_ui.h"

@@ -1,3 +1,4 @@
+/* preview_ui — Preview mode scroll, toggle logic, and key dispatch. */
 #include "preview_ui.h"
 #include "help.h"
 #include "toc.h"

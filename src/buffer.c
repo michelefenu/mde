@@ -1,3 +1,4 @@
+/* buffer — Buffer mutation: insert/delete chars and lines, file load/save. */
 #include "buffer.h"
 #include "xalloc.h"
 #include <stdio.h>

@@ -1,3 +1,4 @@
+/* xalloc — Exit-on-failure wrappers for malloc/realloc. */
 #ifndef XALLOC_H
 #define XALLOC_H
 

@@ -1,3 +1,4 @@
+/* utf8 — UTF-8 byte handling and wcwidth-based column width. */
 #include "utf8.h"
 #include <wchar.h>
 

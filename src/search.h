@@ -1,3 +1,4 @@
+/* search — Text search and go-to-line navigation. */
 #ifndef SEARCH_H
 #define SEARCH_H
 

@@ -1,3 +1,4 @@
+/* main — Entry point: locale init, editor setup, event loop. */
 #include <stdio.h>
 #include <locale.h>
 #include "editor.h"

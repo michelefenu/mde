@@ -1,3 +1,4 @@
+/* utf8 — UTF-8 encoding/decoding and display-width helpers. */
 #ifndef UTF8_H
 #define UTF8_H
 

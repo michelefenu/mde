@@ -1,3 +1,4 @@
+/* undo — Undo/redo stack with sequence-grouped entries. */
 #ifndef UNDO_H
 #define UNDO_H
 

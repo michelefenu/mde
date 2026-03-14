@@ -1,3 +1,4 @@
+/* buffer — Line-based text buffer: dynamic array of heap-allocated Lines. */
 #ifndef BUFFER_H
 #define BUFFER_H
 

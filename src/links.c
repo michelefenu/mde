@@ -1,3 +1,4 @@
+/* links — Parse [text](url) links, GitHub-style slug generation. */
 #include "links.h"
 #include "render.h"
 #include "utf8.h"

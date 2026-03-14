@@ -1,3 +1,4 @@
+/* render_table — Pipe-table detection and preview rendering with box-drawing. */
 #ifndef RENDER_TABLE_H
 #define RENDER_TABLE_H
 

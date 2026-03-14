@@ -1,3 +1,4 @@
+/* toc — Table-of-contents overlay extracted from headings. */
 #ifndef TOC_H
 #define TOC_H
 

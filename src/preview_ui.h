@@ -1,3 +1,4 @@
+/* preview_ui — Preview mode toggle and key handling. */
 #ifndef PREVIEW_UI_H
 #define PREVIEW_UI_H
 
