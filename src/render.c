@@ -1289,7 +1289,7 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
                     break;
                 row++;
             }
-            gen_table_block(pb, buf, ts, row, screen_cols, body_indent);
+            gen_table_block(pb, buf, ts, row, screen_cols, body_indent, &link_idx);
             continue;
         }
 

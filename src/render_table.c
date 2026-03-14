@@ -138,7 +138,7 @@ static void gen_table_content(PreviewBuffer *pb, TRow *row, int *cw,
 
 void gen_table_block(PreviewBuffer *pb, Buffer *buf,
                      int start, int end, int screen_cols,
-                     int body_indent)
+                     int body_indent, int *link_idx)
 {
     int nr = end - start;
     TRow *rows = calloc(nr, sizeof(TRow));
@@ -167,7 +167,7 @@ void gen_table_block(PreviewBuffer *pb, Buffer *buf,
                          ba, bc,
                          &rows[i].stripped[c],
                          &rows[i].cell_styles[c],
-                         &rows[i].strip_lens[c], NULL);
+                         &rows[i].strip_lens[c], link_idx);
             rows[i].strip_dws[c] =
                 cell_display_width(rows[i].stripped[c], rows[i].strip_lens[c]);
         }
