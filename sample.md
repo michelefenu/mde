@@ -60,7 +60,7 @@ Ordered (continuing a numbered list):
 Task lists use GFM-style checkboxes — they render with a distinct checkbox style
 in preview mode:
 
-- [ ] Open task
+- [x] Open task
 - [x] Completed task
 - [ ] Task with metadata @alice #feature ~2d 2026-03-10
 - [x] Released ~1w #done

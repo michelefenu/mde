@@ -544,6 +544,68 @@ static void test_links_collect_skips_code_blocks(void)
     buffer_free(&buf);
 }
 
+static void test_links_slug_strips_inline(void)
+{
+    const char *lines[] = {
+        "# **Bold** Title",
+        "Some text."
+    };
+    Buffer buf = make_buf(lines, 2);
+    assert(links_find_anchor(&buf, "bold-title") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_slug_strips_link_url(void)
+{
+    const char *lines[] = {
+        "# Heading with [link](http://example.com)",
+        "Text."
+    };
+    Buffer buf = make_buf(lines, 2);
+    assert(links_find_anchor(&buf, "heading-with-link") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_slug_preserves_underscores(void)
+{
+    const char *lines[] = { "## my_func" };
+    Buffer buf = make_buf(lines, 1);
+    assert(links_find_anchor(&buf, "my_func") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_slug_removes_punctuation(void)
+{
+    const char *lines[] = { "## What is this?" };
+    Buffer buf = make_buf(lines, 1);
+    assert(links_find_anchor(&buf, "what-is-this") == 0);
+    buffer_free(&buf);
+}
+
+static void test_links_slug_duplicate_headings(void)
+{
+    const char *lines[] = {
+        "# Foo",
+        "Text.",
+        "# Foo",
+        "More text.",
+        "# Foo"
+    };
+    Buffer buf = make_buf(lines, 5);
+    assert(links_find_anchor(&buf, "foo") == 0);
+    assert(links_find_anchor(&buf, "foo-1") == 2);
+    assert(links_find_anchor(&buf, "foo-2") == 4);
+    buffer_free(&buf);
+}
+
+static void test_links_slug_leading_spaces(void)
+{
+    const char *lines[] = { "  ## Heading" };
+    Buffer buf = make_buf(lines, 1);
+    assert(links_find_anchor(&buf, "heading") == 0);
+    buffer_free(&buf);
+}
+
 /* ================================================================
  *  main
  * ================================================================ */
@@ -588,6 +650,12 @@ int main(void)
     test_links_find_anchor_missing();
     test_links_find_anchor_skips_code_blocks();
     test_links_collect_skips_code_blocks();
+    test_links_slug_strips_inline();
+    test_links_slug_strips_link_url();
+    test_links_slug_preserves_underscores();
+    test_links_slug_removes_punctuation();
+    test_links_slug_duplicate_headings();
+    test_links_slug_leading_spaces();
 
     printf("All tests passed.\n");
     return 0;
