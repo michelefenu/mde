@@ -9,7 +9,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-#define MAX_LINKS 256
+#define MAX_LINKS 512
 
 static void open_url(Editor *ed, const char *url)
 {
