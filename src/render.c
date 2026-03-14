@@ -344,8 +344,12 @@ static void apply_links(const char *text, int len,
         }
 
         /* Record link index for preview (skip images) */
-        if (link_idx_at && next_link_idx && !img_bang)
-            link_idx_at[bracket_end - 1] = ++(*next_link_idx);
+        if (link_idx_at && next_link_idx && !img_bang) {
+            int is_anchor = (bracket_end + 2 < paren_end &&
+                             text[bracket_end + 2] == '#');
+            int idx = ++(*next_link_idx);
+            link_idx_at[bracket_end - 1] = is_anchor ? -idx : idx;
+        }
 
         i = paren_end + 1;
     }
@@ -820,7 +824,10 @@ void strip_inline(const char *src, int src_len,
         /* Append link index (N) after link text in preview */
         if (link_idx_at[i] != 0 && len + 16 < max_len) {
             char buf[16];
-            int n = snprintf(buf, sizeof(buf), " (%d)", link_idx_at[i]);
+            int raw_idx = link_idx_at[i];
+            int n = (raw_idx < 0)
+                ? snprintf(buf, sizeof(buf), " [%d]", -raw_idx)
+                : snprintf(buf, sizeof(buf), " (%d)", raw_idx);
             for (int k = 0; k < n; k++) {
                 text[len] = buf[k];
                 styles[len].attr  = base_attr;
