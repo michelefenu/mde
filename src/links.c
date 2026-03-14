@@ -23,6 +23,24 @@ int links_collect(Buffer *buf, LinkInfo *out, int max)
         if (in_code) continue;
 
         for (int i = 0; i < len && count < max; ) {
+            /* Skip inline code spans (`...`) to avoid counting links inside them */
+            if (line[i] == '`') {
+                int bt = 0;
+                while (i < len && line[i] == '`') { bt++; i++; }
+                /* Find matching closing run of exactly bt backticks */
+                for (int j = i; j + bt <= len; j++) {
+                    int ok = 1;
+                    for (int k = 0; k < bt; k++)
+                        if (line[j + k] != '`') { ok = 0; break; }
+                    if (!ok) continue;
+                    if (j + bt < len && line[j + bt] == '`') continue; /* too many */
+                    i = j + bt;
+                    break;
+                }
+                /* If no close found, i is already past opening ticks */
+                continue;
+            }
+
             if (line[i] != '[') { i++; continue; }
 
             /* Skip images: '!' before '[' */
