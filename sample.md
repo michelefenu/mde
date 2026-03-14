@@ -3,6 +3,10 @@
 **mde** is a terminal Markdown editor with two modes: **preview mode** (rendered
 preview) and **edit mode** (raw Markdown). Press `Ctrl+P` to switch between them.
 
+> **New to mde?** Work through the interactive tutorial in the
+> [examples folder](examples/00_start_here.md) — five short lessons that
+> cover formatting, navigation, editing, tables, and workflow.
+
 ---
 
 ## Inline formatting
@@ -156,3 +160,16 @@ ___
 | `Ctrl+E` / End  | —                         | End of line                    |
 | `Escape`        | —                         | Switch to preview mode         |
 | `F1`            | Show help                 | Show help                      |
+
+---
+
+## Learn more
+
+| Resource | Description |
+|----------|-------------|
+| [examples/00_start_here.md](examples/00_start_here.md) | Interactive 5-lesson tutorial |
+| [examples/01_formatting.md](examples/01_formatting.md) | Formatting reference |
+| [examples/02_navigation.md](examples/02_navigation.md) | Navigation and links |
+| [examples/03_editing.md](examples/03_editing.md) | Edit mode shortcuts |
+| [examples/04_tables_code.md](examples/04_tables_code.md) | Tables and fenced code |
+| [examples/05_workflow.md](examples/05_workflow.md) | Full workflow reference card |
