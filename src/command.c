@@ -8,8 +8,19 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 #define MAX_LINKS 512
+
+static int is_local_path(const char *url)
+{
+    if (url[0] == '#')                      return 0; /* anchor */
+    if (strncmp(url, "http://",  7) == 0)   return 0;
+    if (strncmp(url, "https://", 8) == 0)   return 0;
+    if (strncmp(url, "ftp://",   6) == 0)   return 0;
+    if (strncmp(url, "mailto:",  7) == 0)   return 0;
+    return 1;
+}
 
 static void open_url(Editor *ed, const char *url)
 {
@@ -117,6 +128,49 @@ int command_file_tab_complete(char *buf, int buflen, int maxlen)
     return newlen;
 }
 
+void editor_open_file_direct(Editor *ed, const char *path)
+{
+    if (ed->dirty) {
+        editor_set_status(ed, "Unsaved changes — save first (Ctrl+S)");
+        return;
+    }
+
+    char resolved[PATH_MAX];
+    if (path[0] != '/' && ed->filename) {
+        /* resolve relative to directory of current file */
+        char dir[PATH_MAX];
+        strncpy(dir, ed->filename, sizeof(dir) - 1);
+        dir[sizeof(dir) - 1] = '\0';
+        char *slash = strrchr(dir, '/');
+        if (slash) {
+            slash[1] = '\0';
+            snprintf(resolved, sizeof(resolved), "%s%s", dir, path);
+        } else {
+            strncpy(resolved, path, sizeof(resolved) - 1);
+            resolved[sizeof(resolved) - 1] = '\0';
+        }
+    } else {
+        strncpy(resolved, path, sizeof(resolved) - 1);
+        resolved[sizeof(resolved) - 1] = '\0';
+    }
+
+    int was_preview = ed->preview_mode;
+    if (was_preview) editor_toggle_preview(ed);
+
+    buffer_free(&ed->buf);
+    buffer_init(&ed->buf);
+    undo_stack_clear(&ed->undo);
+    undo_stack_clear(&ed->redo);
+    ed->cx = 0; ed->cy = 0;
+    ed->scroll_y = 0; ed->scroll_x = 0;
+    ed->dirty = 0;
+    ed->search_query[0] = '\0';
+    ed->search_query_len = 0;
+    editor_open(ed, resolved);
+
+    if (was_preview) editor_toggle_preview(ed);
+}
+
 void editor_open_file_prompt(Editor *ed)
 {
     char *filename = editor_prompt(ed, "Open file: ", NULL,
@@ -201,6 +255,8 @@ void editor_open_link_prompt(Editor *ed)
             clamp_preview_scroll(ed);
             editor_set_status(ed, "Jumped to: %s", url);
         }
+    } else if (is_local_path(url)) {
+        editor_open_file_direct(ed, url);
     } else {
         open_url(ed, url);
     }
