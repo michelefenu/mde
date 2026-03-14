@@ -8,24 +8,19 @@
 
 ## What is mde?
 
-mde is a terminal-based markdown editor written in C. It provides live
-syntax styling in edit mode and a rendered preview mode, all within an
-ncurses interface. Files are saved as standard `.md`; the editor never
-writes rendered output.
+mde is a terminal-based markdown editor. It lets you edit and preview
+markdown files without leaving the terminal.
 
-mde understands headings, bold, italic, strikethrough, inline code, code
-blocks, links, images, unordered and ordered lists, GFM task checkboxes,
-blockquotes, horizontal rules, and pipe tables. Markdown delimiters are
-dimmed in edit mode so the content stays readable. Preview mode hides
-syntax markers entirely and draws tables with box-drawing characters.
+In edit mode, syntax is styled as you type: headings, emphasis, links,
+lists, code blocks, tables, and more are coloured in place, with
+delimiters dimmed so the content stays readable. Preview mode renders
+the document read-only with syntax markers hidden and tables drawn with
+box-drawing characters.
 
-List continuation works automatically: pressing Enter on a list item
-starts the next one with the correct marker and indentation. Pressing
-Enter on an empty list item exits the list. Ordered lists are
-auto-incremented.
-
-Todo items support metadata tokens: `#tag`, `@assignee`, `~duration`,
-and `yyyy-mm-dd` dates are highlighted in context.
+Lists are continued automatically on Enter with correct markers and
+indentation. Ordered lists are auto-incremented. Todo items (`- [ ]`,
+`- [x]`) support metadata tokens like `#tag`, `@assignee`, `~duration`,
+and dates.
 
 ## Requirements
 
@@ -119,14 +114,14 @@ switch between them.
 
 ```
 src/
-  main.c          — entry point, locale init, event loop
-  editor.h/c      — editor state, key dispatch, file I/O
-  buffer.h/c      — line-based text buffer
-  render.h/c      — markdown parser and ncurses rendering
-  undo.h/c        — append-only undo/redo stack
-  search.h/c      — incremental search with highlighting
-  utf8.h/c        — UTF-8 helpers
-  preview_ui.h    — preview mode rendering
+  main.c          - entry point, locale init, event loop
+  editor.h/c      - editor state, key dispatch, file I/O
+  buffer.h/c      - line-based text buffer
+  render.h/c      - markdown parser and ncurses rendering
+  undo.h/c        - append-only undo/redo stack
+  search.h/c      - incremental search with highlighting
+  utf8.h/c        - UTF-8 helpers
+  preview_ui.h    - preview mode rendering
 ```
 
 ## Documentation
