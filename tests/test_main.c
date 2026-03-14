@@ -1,13 +1,14 @@
 #include <assert.h>
+#include <ctype.h>
 #include <locale.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "../src/utf8.h"
-#include "../src/buffer.h"
-#include "../src/undo.h"
-#include "../src/render.h"
-#include "../src/links.h"
+#include "utf8.h"
+#include "buffer.h"
+#include "undo.h"
+#include "render.h"
+#include "links.h"
 
 /* ================================================================
  *  utf8 tests
@@ -607,6 +608,73 @@ static void test_links_slug_leading_spaces(void)
 }
 
 /* ================================================================
+ *  ordered list auto-numbering tests
+ * ================================================================ */
+
+/* Helper: extract the number prefix from a preview line's text.
+   Returns the parsed integer, or -1 if no number found. */
+static int extract_olist_num(PreviewLine *pl)
+{
+    int i = 0;
+    while (i < pl->len && pl->text[i] == ' ') i++;
+    if (i >= pl->len || !isdigit((unsigned char)pl->text[i])) return -1;
+    int num = 0;
+    while (i < pl->len && isdigit((unsigned char)pl->text[i])) {
+        num = num * 10 + (pl->text[i] - '0');
+        i++;
+    }
+    return num;
+}
+
+static void test_olist_autonumber(void)
+{
+    /* 1. A / 1. B / 1. C should render as 1, 2, 3 */
+    const char *lines[] = { "1. A", "1. B", "1. C" };
+    Buffer buf = make_buf(lines, 3);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    assert(pb.num_lines == 3);
+    assert(extract_olist_num(&pb.lines[0]) == 1);
+    assert(extract_olist_num(&pb.lines[1]) == 2);
+    assert(extract_olist_num(&pb.lines[2]) == 3);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+static void test_olist_start_from_nonone(void)
+{
+    /* 3. X / 1. Y / 8. Z should render as 3, 4, 5 */
+    const char *lines[] = { "3. X", "1. Y", "8. Z" };
+    Buffer buf = make_buf(lines, 3);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    assert(pb.num_lines == 3);
+    assert(extract_olist_num(&pb.lines[0]) == 3);
+    assert(extract_olist_num(&pb.lines[1]) == 4);
+    assert(extract_olist_num(&pb.lines[2]) == 5);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+static void test_olist_reset_between_runs(void)
+{
+    /* Two separate ordered lists with a paragraph in between */
+    const char *lines[] = { "1. A", "1. B", "", "5. X", "5. Y" };
+    Buffer buf = make_buf(lines, 5);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    /* Lines: "1. A", "2. B", empty, "5. X", "6. Y" */
+    assert(pb.num_lines == 5);
+    assert(extract_olist_num(&pb.lines[0]) == 1);
+    assert(extract_olist_num(&pb.lines[1]) == 2);
+    /* pb.lines[2] is the empty line */
+    assert(extract_olist_num(&pb.lines[3]) == 5);
+    assert(extract_olist_num(&pb.lines[4]) == 6);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+/* ================================================================
  *  main
  * ================================================================ */
 
@@ -656,6 +724,11 @@ int main(void)
     test_links_slug_removes_punctuation();
     test_links_slug_duplicate_headings();
     test_links_slug_leading_spaces();
+
+    /* ordered list auto-numbering */
+    test_olist_autonumber();
+    test_olist_start_from_nonone();
+    test_olist_reset_between_runs();
 
     printf("All tests passed.\n");
     return 0;

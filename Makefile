@@ -7,8 +7,13 @@ SRCDIR   = src
 BUILDDIR = build
 TARGET   = mde
 
-SRCS = $(wildcard $(SRCDIR)/*.c)
-OBJS = $(SRCS:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)
+SUBDIRS  = core render features utils
+SRCS     = $(foreach d,$(SUBDIRS),$(wildcard $(SRCDIR)/$(d)/*.c))
+OBJS     = $(addprefix $(BUILDDIR)/,$(notdir $(SRCS:.c=.o)))
+INCLUDES = -I$(SRCDIR)/core -I$(SRCDIR)/render -I$(SRCDIR)/features \
+           -I$(SRCDIR)/utils -I$(BUILDDIR)
+
+vpath %.c $(foreach d,$(SUBDIRS),$(SRCDIR)/$(d))
 
 .PHONY: all clean test
 
@@ -23,21 +28,23 @@ $(BUILDDIR)/help_md.h: docs/help.md | $(BUILDDIR)
 $(BUILDDIR)/editor.o: $(BUILDDIR)/help_md.h
 $(BUILDDIR)/help.o: $(BUILDDIR)/help_md.h
 
-$(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) -I$(BUILDDIR) -MMD -c $< -o $@
+$(BUILDDIR)/%.o: %.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -MMD -c $< -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
             $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o \
+            $(BUILDDIR)/render_olist.o $(BUILDDIR)/render_ulist.o \
+            $(BUILDDIR)/render_todo.o \
             $(BUILDDIR)/links.o
 
 test: $(BUILDDIR)/test_runner
 	./$(BUILDDIR)/test_runner
 
 $(BUILDDIR)/test_runner: tests/test_main.c $(TEST_OBJS) | $(BUILDDIR)
-	$(CC) $(CFLAGS) tests/test_main.c $(TEST_OBJS) -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) tests/test_main.c $(TEST_OBJS) -o $@ $(LDFLAGS)
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)

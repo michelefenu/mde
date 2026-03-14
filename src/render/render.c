@@ -1,6 +1,9 @@
 /* render — Block/inline markdown rendering to ncurses, preview buffer construction. */
 #include "render.h"
 #include "render_table.h"
+#include "render_olist.h"
+#include "render_ulist.h"
+#include "render_todo.h"
 #include "utf8.h"
 #include "xalloc.h"
 #include <stdio.h>
@@ -431,77 +434,8 @@ static void mark_block_markers(const char *line, int len,
 }
 
 /* ================================================================
- *  Todo item helpers
+ *  Todo item helpers (edit-mode styling -- parse/meta moved to render_todo.c)
  * ================================================================ */
-
-/* Returns 1 if the line is a GFM-style todo item: - [ ] or - [x]
-   Sets *is_done, *cb_start (byte offset of '['), *text_start (offset
-   of text content after "- [x] "). */
-static int parse_todo_item(const char *line, int len,
-                           int *is_done, int *cb_start, int *text_start)
-{
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    if (i >= len || (line[i] != '-' && line[i] != '*' && line[i] != '+'))
-        return 0;
-    i++;
-    if (i >= len || line[i] != ' ') return 0;
-    i++;
-    if (i + 2 >= len || line[i] != '[') return 0;
-    if (line[i+1] != ' ' && line[i+1] != 'x' && line[i+1] != 'X') return 0;
-    if (line[i+2] != ']') return 0;
-
-    *is_done   = (line[i+1] == 'x' || line[i+1] == 'X');
-    *cb_start  = i;
-    i += 3;
-    if (i < len && line[i] == ' ') i++;
-    *text_start = i;
-    return 1;
-}
-
-/* Color metadata tokens (~dur #tag @name yyyy-mm-dd) in a char array.
-   Works on both raw source bytes (edit mode) and stripped preview bytes. */
-static void apply_todo_meta_styles(const char *text, int len, CharStyle *styles)
-{
-    for (int j = 0; j < len; j++) {
-        char c = text[j];
-        if (c == '~' || c == '#' || c == '@') {
-            int start = j;
-            j++;
-            while (j < len && (isalnum((unsigned char)text[j]) ||
-                                text[j] == '-' || text[j] == '_'))
-                j++;
-            if (j > start + 1) {
-                for (int k = start; k < j; k++) {
-                    styles[k].attr  = A_BOLD;
-                    styles[k].cpair = CP_TODO_META;
-                }
-            }
-            j--;
-        } else if (isdigit((unsigned char)c) && j + 10 <= len) {
-            /* yyyy-mm-dd */
-            if (isdigit((unsigned char)text[j+1]) &&
-                isdigit((unsigned char)text[j+2]) &&
-                isdigit((unsigned char)text[j+3]) &&
-                text[j+4] == '-' &&
-                isdigit((unsigned char)text[j+5]) &&
-                isdigit((unsigned char)text[j+6]) &&
-                text[j+7] == '-' &&
-                isdigit((unsigned char)text[j+8]) &&
-                isdigit((unsigned char)text[j+9])) {
-                int at_word_boundary = (j == 0 || text[j-1] == ' ');
-                int after_ok = (j + 10 >= len || text[j+10] == ' ');
-                if (at_word_boundary && after_ok) {
-                    for (int k = j; k < j + 10; k++) {
-                        styles[k].attr  = A_BOLD;
-                        styles[k].cpair = CP_TODO_META;
-                    }
-                    j += 9;
-                }
-            }
-        }
-    }
-}
 
 /* Edit-mode: color the checkbox + metadata on a todo list line. */
 static void apply_todo_styles(const char *line, int len, CharStyle *styles)
@@ -969,57 +903,6 @@ static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
     free(ct); free(cs);
 }
 
-static void gen_ulist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row, int body_indent, int *link_idx)
-{
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    int indent = body_indent + i;
-    i++;                                       /* skip marker */
-    if (i < len && line[i] == ' ') i++;
-
-    char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl, link_idx);
-
-    int total = indent + 2 + cl;
-    PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
-    pv_set_acs(pl, p, PM_BULLET, A_BOLD, CP_LIST_MARKER);
-    p++;
-    pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
-    p = pv_copy(pl, p, ct, cs, cl);
-    pl->len = p; pl->text[p] = '\0';
-    free(ct); free(cs);
-}
-
-static void gen_olist(PreviewBuffer *pb, const char *line, int len,
-                      int source_row, int body_indent, int *link_idx)
-{
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    int indent = body_indent + i;
-    int ns = i;
-    while (i < len && isdigit((unsigned char)line[i])) i++;
-    if (i < len && (line[i] == '.' || line[i] == ')')) i++;
-    if (i < len && line[i] == ' ') i++;
-    int prefix_len = i - ns;
-
-    char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, 0, CP_DEFAULT, &ct, &cs, &cl, link_idx);
-
-    int total = indent + prefix_len + cl;
-    PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
-    for (int j = 0; j < prefix_len; j++) {
-        pl->text[p]         = line[ns + j];
-        pl->styles[p].attr  = A_BOLD;
-        pl->styles[p].cpair = CP_LIST_MARKER;
-        p++;
-    }
-    p = pv_copy(pl, p, ct, cs, cl);
-    pl->len = p; pl->text[p] = '\0';
-    free(ct); free(cs);
-}
 
 static void gen_blockquote(PreviewBuffer *pb, const char *line, int len,
                            int source_row, int body_indent, int *link_idx)
@@ -1200,53 +1083,6 @@ static void gen_empty(PreviewBuffer *pb, int source_row)
     pv_add(pb, source_row, 0);
 }
 
-static void gen_todo(PreviewBuffer *pb, const char *line, int len,
-                     int source_row, int body_indent, int *link_idx,
-                     int is_done, int text_start)
-{
-    /* Count leading spaces to compute indent level */
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    int indent = body_indent + i;
-
-    /* Unicode ballot boxes: ☐ (U+2610) = open, ☑ (U+2611) = done */
-    static const char box_open[] = "\xe2\x98\x90"; /* ☐ */
-    static const char box_done[] = "\xe2\x98\x91"; /* ☑ */
-    const char *box   = is_done ? box_done : box_open;
-    int         boxsz = 3; /* UTF-8 byte length */
-
-    short  cb_cpair = is_done ? CP_TODO_DONE : CP_TODO_OPEN;
-    attr_t cb_attr  = is_done ? A_DIM : A_BOLD;
-    attr_t base_attr  = is_done ? A_DIM : 0;
-    short  base_cpair = is_done ? CP_TODO_DONE : CP_DEFAULT;
-
-    char *ct; CharStyle *cs; int cl;
-    strip_inline(line + text_start, len - text_start,
-                 base_attr, base_cpair, &ct, &cs, &cl, link_idx);
-
-    /* Color metadata tokens in the stripped content */
-    apply_todo_meta_styles(ct, cl, cs);
-
-    /* byte total: indent spaces + checkbox(3 bytes) + space + content */
-    int total = indent + boxsz + 1 + cl;
-    PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
-
-    /* Store checkbox glyph bytes; styles[p+1] and [p+2] are intermediate
-       continuation bytes — draw routine skips them via utf8_clen. */
-    for (int j = 0; j < boxsz; j++) {
-        pl->text[p]         = box[j];
-        pl->styles[p].attr  = cb_attr;
-        pl->styles[p].cpair = cb_cpair;
-        pl->styles[p].acs   = 0;
-        p++;
-    }
-
-    pl->text[p] = ' '; pl->styles[p].cpair = CP_DEFAULT; p++;
-    p = pv_copy(pl, p, ct, cs, cl);
-    pl->len = p; pl->text[p] = '\0';
-    free(ct); free(cs);
-}
 
 /* ================================================================
  *  Public preview API
@@ -1260,11 +1096,16 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
     int body_indent = 0;
     int link_idx = 0;
     int row = 0;
+    int olist_active = 0, olist_counter = 0;
 
     while (row < buf->num_lines) {
         char     *line = buffer_line_data(buf, row);
         int       len  = buffer_line_len(buf, row);
         BlockType bt   = render_get_block_type(line, in_code);
+
+        /* Reset ordered-list counter when leaving a run */
+        if (bt != BLOCK_LIST_ORDERED)
+            olist_active = 0;
 
         if (bt == BLOCK_CODE_FENCE) {
             int fence_open = row;
@@ -1319,12 +1160,28 @@ void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols)
                 gen_ulist(pb, line, len, row, body_indent, &link_idx);
             break;
         }
-        case BLOCK_LIST_ORDERED:
-            gen_olist(pb, line, len, row, body_indent, &link_idx); break;
+        case BLOCK_LIST_ORDERED: {
+            if (!olist_active) {
+                /* First item: parse its number as the starting value */
+                int i = 0;
+                while (i < len && line[i] == ' ') i++;
+                olist_counter = 0;
+                while (i < len && isdigit((unsigned char)line[i])) {
+                    olist_counter = olist_counter * 10 + (line[i] - '0');
+                    i++;
+                }
+                olist_active = 1;
+            } else {
+                olist_counter++;
+            }
+            gen_olist(pb, line, len, row, body_indent, &link_idx,
+                      olist_counter);
+            break;
+        }
         case BLOCK_BLOCKQUOTE:
             gen_blockquote(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_CODE_CONTENT:
-            /* Shouldn't happen — code blocks are collected above.
+            /* Shouldn't happen -- code blocks are collected above.
                Fall through to paragraph as a safety net. */
             gen_paragraph(pb, line, len, row, body_indent, &link_idx); break;
         case BLOCK_EMPTY:
