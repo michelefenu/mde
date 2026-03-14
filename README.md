@@ -8,28 +8,33 @@
 
 ## What is mde?
 
-mde is a terminal-based markdown editor. It lets you edit and preview
-markdown files without leaving the terminal.
+mde is a terminal-based markdown editor. It operates in two modes:
 
-In edit mode, syntax is styled as you type: headings, emphasis, links,
-lists, code blocks, tables, and more are coloured in place, with
-delimiters dimmed so the content stays readable. Preview mode renders
-the document read-only with syntax markers hidden and tables drawn with
-box-drawing characters.
+- **Edit mode** - live syntax styling with dimmed delimiters. Headings,
+  emphasis, links, lists, code blocks, tables, blockquotes, and
+  horizontal rules are coloured as text is entered.
+- **Preview mode** - read-only rendered view. Syntax markers are hidden,
+  tables use box-drawing borders, and headings are indented by level.
 
-Lists are continued automatically on Enter with correct markers and
-indentation. Ordered lists are auto-incremented. Todo items (`- [ ]`,
-`- [x]`) support metadata tokens like `#tag`, `@assignee`, `~duration`,
-and dates.
+Switching between modes is done with Ctrl+P or Escape.
+
+Additional features include incremental search with match highlighting,
+full undo/redo history, automatic list continuation with marker
+auto-increment, GFM task checkboxes with metadata highlighting (`#tag`,
+`@assignee`, `~duration`, dates), word wrap, table of contents
+navigation, and tab-completed file open.
+
+Files are saved as standard `.md`. The editor never writes rendered
+output.
 
 ## Requirements
 
 A C99 compiler (gcc or clang) and the ncurses development library.
 
-- **macOS**: included with Xcode Command Line Tools
-- **Debian / Ubuntu**: `sudo apt install libncurses-dev`
-- **Fedora**: `sudo dnf install ncurses-devel`
-- **Arch**: `sudo pacman -S ncurses`
+- **macOS** - included with Xcode Command Line Tools
+- **Debian / Ubuntu** - `sudo apt install libncurses-dev`
+- **Fedora** - `sudo dnf install ncurses-devel`
+- **Arch** - `sudo pacman -S ncurses`
 
 ## Compiling
 
@@ -37,17 +42,12 @@ A C99 compiler (gcc or clang) and the ncurses development library.
 make
 ```
 
-This produces the `mde` binary in the project root. Object files go
-into `build/`. To remove all build artifacts:
+The `mde` binary is produced in the project root. Object files are
+placed in `build/`.
 
 ```
-make clean
-```
-
-To build and run the test suite:
-
-```
-make test
+make clean          # remove build artifacts
+make test           # build and run the test suite
 ```
 
 ## Usage
@@ -56,8 +56,8 @@ make test
 mde [file]
 ```
 
-If no file is given, mde starts with an empty buffer. A sample file is
-included:
+Without arguments, mde starts with an empty buffer. A sample file is
+included for reference:
 
 ```
 mde sample.md
@@ -65,50 +65,47 @@ mde sample.md
 
 ## Key bindings
 
-mde operates in two modes: edit and preview. Press Ctrl+P or Escape to
-switch between them.
-
 ### Edit mode
 
-| Key               | Action                          |
-|-------------------|---------------------------------|
-| Ctrl+S            | Save                            |
-| Ctrl+Q            | Quit (press twice if unsaved)   |
-| Ctrl+P / Escape   | Switch to preview mode          |
-| Ctrl+Z            | Undo                            |
-| Ctrl+Y            | Redo                            |
-| Ctrl+F            | Search                          |
-| Ctrl+N            | Next match                      |
-| Ctrl+G            | Go to line                      |
-| Ctrl+O            | Open file (tab completion)      |
-| Ctrl+L            | Open link by number             |
-| Ctrl+T            | Table of contents               |
-| Ctrl+W            | Toggle word wrap                |
-| Ctrl+K            | Delete to end of line           |
-| Ctrl+A / Ctrl+E   | Beginning / end of line         |
-| Tab               | Insert 4 spaces                 |
-| F1                | Help                            |
+| Key               | Action                        |
+|-------------------|-------------------------------|
+| Ctrl+S            | Save                          |
+| Ctrl+Q            | Quit (twice if unsaved)       |
+| Ctrl+P / Escape   | Preview mode                  |
+| Ctrl+Z            | Undo                          |
+| Ctrl+Y            | Redo                          |
+| Ctrl+F            | Search                        |
+| Ctrl+N            | Next match                    |
+| Ctrl+G            | Go to line                    |
+| Ctrl+O            | Open file                     |
+| Ctrl+L            | Open link by number           |
+| Ctrl+T            | Table of contents             |
+| Ctrl+W            | Toggle word wrap              |
+| Ctrl+K            | Delete to end of line         |
+| Ctrl+A / Ctrl+E   | Beginning / end of line       |
+| Tab               | Insert 4 spaces               |
+| F1                | Help                          |
 
 ### Preview mode
 
-| Key               | Action                          |
-|-------------------|---------------------------------|
-| Ctrl+P            | Switch to edit mode             |
-| Ctrl+F            | Search                          |
-| Ctrl+N            | Next match                      |
-| Ctrl+S            | Save                            |
-| Ctrl+G            | Go to line                      |
-| Ctrl+O            | Open file                       |
-| Ctrl+L            | Open link by number             |
-| Ctrl+T            | Table of contents               |
-| Ctrl+W            | Toggle word wrap                |
-| Ctrl+Z / Ctrl+Y   | Undo / redo                     |
-| Ctrl+Q            | Quit                            |
-| Arrow keys        | Scroll                          |
-| Shift+Up/Down     | Scroll 10 lines                 |
-| Page Up/Down      | Scroll one page                 |
-| Home / End        | Top / bottom of document        |
-| F1                | Help                            |
+| Key               | Action                        |
+|-------------------|-------------------------------|
+| Ctrl+P            | Edit mode                     |
+| Ctrl+F            | Search                        |
+| Ctrl+N            | Next match                    |
+| Ctrl+S            | Save                          |
+| Ctrl+G            | Go to line                    |
+| Ctrl+O            | Open file                     |
+| Ctrl+L            | Open link by number           |
+| Ctrl+T            | Table of contents             |
+| Ctrl+W            | Toggle word wrap              |
+| Ctrl+Z / Ctrl+Y   | Undo / redo                   |
+| Ctrl+Q            | Quit                          |
+| Arrow keys        | Scroll                        |
+| Shift+Up/Down     | Scroll 10 lines               |
+| Page Up/Down      | Scroll one page               |
+| Home / End        | Top / bottom                  |
+| F1                | Help                          |
 
 ## Architecture
 
@@ -126,13 +123,13 @@ src/
 
 ## Documentation
 
-Press F1 inside mde for a built-in help reference, or read `docs/help.md`
-directly.
+The built-in help is accessible with F1 at any time. The source for
+it is in `docs/help.md`.
 
 ## Copying
 
-mde is distributed under the BSD 2-Clause license. See the LICENSE file
-for the full text.
+mde is distributed under the BSD 2-Clause license. See the LICENSE
+file for the full text.
 
 ## Reporting bugs
 
