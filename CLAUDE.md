@@ -20,27 +20,30 @@ The project is a terminal-based Markdown editor written in C99 using POSIX termi
 
 ```
 src/
-  Core
+  core/
     main.c          — entry point: locale init, editor setup, event loop
     editor.h/c      — Editor state, event loop, key dispatch, file I/O, prompt dialogs
     buffer.h/c      — Line-based text buffer: dynamic array of heap-allocated Lines
 
-  Rendering
+  render/
     render.h/c      — Block/inline markdown rendering, preview buffer construction
     render_table.h/c — Pipe-table detection, column-width computation, box-drawing
+    render_olist.h/c — Ordered list rendering for preview mode
+    render_ulist.h/c — Unordered list rendering for preview mode
+    render_todo.h/c  — Todo/checkbox rendering for preview and edit modes
     preview_ui.h/c  — Preview mode toggle, scroll, and key dispatch
 
-  Features
+  features/
     search.h/c      — Forward/backward text search with incremental highlighting
     help.h/c        — Help overlay: load embedded help.md into preview buffer
     toc.h/c         — Table-of-contents overlay extracted from headings
     command.h/c     — File-open and link-open commands with tab completion
     links.h/c       — Markdown link extraction, heading anchor lookup, slug generation
 
-  Terminal
-    term.h/c        — POSIX terminal I/O: raw termios, ANSI SGR, key parser (replaces ncurses)
+  term/
+    term.h/c        — POSIX terminal I/O: raw termios, ANSI SGR, key parser
 
-  Utilities
+  utils/
     undo.h/c        — Append-only undo/redo stack with sequence-grouped entries
     utf8.h/c        — UTF-8 encoding/decoding and display-width helpers
     xalloc.h        — Exit-on-failure wrappers for malloc/realloc

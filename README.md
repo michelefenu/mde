@@ -103,20 +103,6 @@ mde sample.md
 | Home / End        | Top / bottom                  |
 | F1                | Help                          |
 
-## Architecture
-
-```
-src/
-  main.c          - entry point, locale init, event loop
-  editor.h/c      - editor state, key dispatch, file I/O
-  buffer.h/c      - line-based text buffer
-  render.h/c      - markdown parser and terminal rendering
-  undo.h/c        - append-only undo/redo stack
-  search.h/c      - incremental search with highlighting
-  utf8.h/c        - UTF-8 helpers
-  preview_ui.h    - preview mode rendering
-```
-
 ## Documentation
 
 The built-in help is accessible with F1 at any time. The source for
