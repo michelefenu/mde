@@ -675,6 +675,70 @@ static void test_olist_reset_between_runs(void)
 }
 
 /* ================================================================
+ *  blockquote rendering tests
+ * ================================================================ */
+
+static void test_bq_uses_bq_bar(void)
+{
+    /* A simple blockquote should use PM_BQ_BAR for the left bar, not PM_VLINE */
+    const char *lines[] = { "> Hello" };
+    Buffer buf = make_buf(lines, 1);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    assert(pb.num_lines >= 1);
+    assert(pb.lines[0].styles[0].acs == PM_BQ_BAR);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+static void test_bq_heading_strips_hashes(void)
+{
+    /* A heading inside a blockquote should not show '#' characters after pos 2 */
+    const char *lines[] = { "> ## Section" };
+    Buffer buf = make_buf(lines, 1);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    assert(pb.num_lines >= 1);
+    /* Check that no '#' appears after position 2 (past the bar + space) */
+    PreviewLine *pl = &pb.lines[0];
+    for (int i = 2; i < pl->len; i++)
+        assert(pl->text[i] != '#');
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+static void test_bq_nested_two_bars(void)
+{
+    /* Nested blockquote: '> > Nested' should produce two PM_BQ_BAR markers */
+    const char *lines[] = { "> > Nested" };
+    Buffer buf = make_buf(lines, 1);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    assert(pb.num_lines >= 1);
+    PreviewLine *pl = &pb.lines[0];
+    assert(pl->styles[0].acs == PM_BQ_BAR);
+    /* pos 1 is the space between bars; pos 2 is the second bar */
+    assert(pl->styles[2].acs == PM_BQ_BAR);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+static void test_bq_lazy_continuation(void)
+{
+    /* Lazy continuation: second line without '>' belongs to the blockquote */
+    const char *lines[] = { "> First line", "lazy continuation" };
+    Buffer buf = make_buf(lines, 2);
+    PreviewBuffer pb = {0};
+    preview_generate(&pb, &buf, 80);
+    /* Both lines should be inside the blockquote (PM_BQ_BAR at position 0) */
+    assert(pb.num_lines >= 2);
+    assert(pb.lines[0].styles[0].acs == PM_BQ_BAR);
+    assert(pb.lines[1].styles[0].acs == PM_BQ_BAR);
+    preview_free(&pb);
+    buffer_free(&buf);
+}
+
+/* ================================================================
  *  main
  * ================================================================ */
 
@@ -729,6 +793,12 @@ int main(void)
     test_olist_autonumber();
     test_olist_start_from_nonone();
     test_olist_reset_between_runs();
+
+    /* blockquote rendering */
+    test_bq_uses_bq_bar();
+    test_bq_heading_strips_hashes();
+    test_bq_nested_two_bars();
+    test_bq_lazy_continuation();
 
     printf("All tests passed.\n");
     return 0;

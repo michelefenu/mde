@@ -83,6 +83,7 @@ int       render_draw_line_wrapped(int screen_y, int screen_cols,
 #define PM_BTEE     10
 #define PM_PLUS     11
 #define PM_BULLET   12
+#define PM_BQ_BAR   13   /* blockquote left bar — same glyph as PM_VLINE */
 
 typedef struct {
     char      *text;       /* may contain PM_* marker bytes */
