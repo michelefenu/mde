@@ -396,7 +396,29 @@ static int parse_escape_seq(const char *buf, int len)
             case 'B': return KEY_SF;
             }
         }
+
+        /* Kitty keyboard protocol: \033[13;2u */
+        if (buf[len - 1] == 'u') {
+            int keycode = 0, mod = 0, i = 1;
+            while (i < len - 1 && buf[i] >= '0' && buf[i] <= '9')
+                keycode = keycode * 10 + (buf[i++] - '0');
+            if (i < len - 1 && buf[i] == ';') {
+                i++;
+                while (i < len - 1 && buf[i] >= '0' && buf[i] <= '9')
+                    mod = mod * 10 + (buf[i++] - '0');
+            }
+            if (keycode == 13 && mod == 2) return KEY_SHIFT_ENTER;
+        }
+
+        /* xterm modified Enter: \033[27;2;13~ */
+        if (len == 9 && buf[8] == '~' &&
+            buf[1]=='2' && buf[2]=='7' && buf[3]==';' &&
+            buf[4]=='2' && buf[5]==';' && buf[6]=='1' && buf[7]=='3')
+            return KEY_SHIFT_ENTER;
     }
+
+    /* ESC + CR: some terminals send this for Shift+Enter */
+    if (len == 1 && buf[0] == '\r') return KEY_SHIFT_ENTER;
 
     return ERR;
 }

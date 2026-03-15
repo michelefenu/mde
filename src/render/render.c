@@ -1,5 +1,6 @@
 /* render — Block/inline markdown rendering to ncurses, preview buffer construction. */
 #include "render.h"
+#include "render_hrule.h"
 #include "render_table.h"
 #include "render_olist.h"
 #include "render_ulist.h"
@@ -93,22 +94,6 @@ int render_heading_level(const char *line)
     return (lv <= 6) ? lv : 0;
 }
 
-static int is_horizontal_rule(const char *line)
-{
-    int i = 0;
-    while (i < 3 && line[i] == ' ') i++;
-
-    char c = line[i];
-    if (c != '-' && c != '*' && c != '_') return 0;
-
-    int n = 0;
-    while (line[i]) {
-        if (line[i] == c) n++;
-        else if (line[i] != ' ') return 0;
-        i++;
-    }
-    return n >= 3;
-}
 
 BlockType render_get_block_type(const char *line, int in_code_block)
 {
@@ -124,7 +109,7 @@ BlockType render_get_block_type(const char *line, int in_code_block)
         return BLOCK_EMPTY;
     if (render_heading_level(line) > 0)
         return BLOCK_HEADING;
-    if (is_horizontal_rule(line))
+    if (render_is_thematic_break(line))
         return BLOCK_HRULE;
     if (line[i] == '>' && (line[i + 1] == ' ' || line[i + 1] == '\0'))
         return BLOCK_BLOCKQUOTE;
@@ -137,6 +122,19 @@ BlockType render_get_block_type(const char *line, int in_code_block)
             return BLOCK_LIST_ORDERED;
     }
     return BLOCK_PARAGRAPH;
+}
+
+/* Context-aware block type: promotes thematic breaks to setext underlines
+   when the previous non-empty line is a plain paragraph. */
+BlockType render_get_block_type_ctx(const char *line, const char *prev_line,
+                                    int in_code_block)
+{
+    if (!in_code_block && prev_line && prev_line[0] != '\0') {
+        int su = render_is_setext_underline(line);
+        if (su && render_get_block_type(prev_line, 0) == BLOCK_PARAGRAPH)
+            return (su == 1) ? BLOCK_SETEXT_H1 : BLOCK_SETEXT_H2;
+    }
+    return render_get_block_type(line, in_code_block);
 }
 
 /* ================================================================
@@ -498,6 +496,8 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
         return;
 
     case BLOCK_HRULE:
+    case BLOCK_SETEXT_H1:
+    case BLOCK_SETEXT_H2:
         for (int i = 0; i < len; i++) {
             styles[i].attr  = A_DIM;
             styles[i].cpair = CP_HRULE;
@@ -1075,11 +1075,12 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
     int in_code = 0;
     int row = 0;
     int olist_active = 0, olist_counter = 0;
+    const char *prev_para = NULL;
 
     while (row < n) {
         const char *line = vlines[row].text;
         int         len  = vlines[row].len;
-        BlockType   bt   = render_get_block_type(line, in_code);
+        BlockType   bt   = render_get_block_type_ctx(line, prev_para, in_code);
 
         /* Reset ordered-list counter when leaving a run */
         if (bt != BLOCK_LIST_ORDERED)
@@ -1101,6 +1102,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
             gen_code_block_v(pb, vlines, n, fence_idx, content_start,
                              content_end, screen_cols, body_indent);
             if (found_close) row++;
+            prev_para = NULL;
             continue;
         }
 
@@ -1117,6 +1119,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                 row++;
             }
             gen_table_block(pb, buf, ts, row, screen_cols, body_indent, link_idx);
+            prev_para = NULL;
             continue;
         }
 
@@ -1205,8 +1208,18 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                 pl->text[pl->len] = '\0';
             }
             preview_free(&inner_pb);
+            prev_para = NULL;
             continue;  /* row already past bq_end */
         }
+        case BLOCK_SETEXT_H1:
+        case BLOCK_SETEXT_H2:
+            /* CommonMark 4.1: not a thematic break when prev line is paragraph.
+               Suppress the underline line in preview; Section 4.2 will render
+               the heading properly. */
+            gen_empty(pb, vlines[row].source_row);
+            prev_para = NULL;
+            row++;
+            continue;
         case BLOCK_CODE_CONTENT:
             /* Shouldn't happen — code blocks are collected above.
                Fall through to paragraph as a safety net. */
@@ -1220,6 +1233,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                           link_idx);
             break;
         }
+        prev_para = (bt == BLOCK_PARAGRAPH) ? line : NULL;
         row++;
     }
 }

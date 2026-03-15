@@ -1003,6 +1003,17 @@ static void editor_process_key(Editor *ed)
         editor_insert_newline(ed);
         break;
 
+    /* ── Shift+Enter: soft break, exit list mode ── */
+    case KEY_SHIFT_ENTER:
+        undo_push(&ed->undo, UNDO_SPLIT, ed->cy, ed->cx,
+                  NULL, 0, ed->cx, ed->cy, ed->undo_seq);
+        undo_stack_clear(&ed->redo);
+        buffer_insert_newline(&ed->buf, ed->cy, ed->cx);
+        ed->cy++;
+        ed->cx = 0;
+        ed->dirty++;
+        break;
+
     /* ── Backspace ── */
     case KEY_BACKSPACE:
     case 127:
@@ -1092,11 +1103,9 @@ void editor_run(Editor *ed)
     if (has_colors())
         render_init_colors();
 
-    /* Start in preview mode */
-    editor_toggle_preview(ed);
     editor_set_status(ed,
         "mde — Terminal Markdown Editor  |  "
-        "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Edit  |  F1 Help");
+        "Ctrl+Q Quit  |  Ctrl+S Save  |  Ctrl+P Preview  |  F1 Help");
 
     while (!ed->quit) {
         editor_refresh_screen(ed);

@@ -54,8 +54,9 @@ typedef unsigned long attr_t;
 #define KEY_DC        0x10B
 #define KEY_ENTER     0x10C
 #define KEY_F(n)      (0x110 + (n))
-#define KEY_RESIZE    0x120
-#define KEY_CODE_YES  0x121
+#define KEY_RESIZE      0x120
+#define KEY_CODE_YES    0x121
+#define KEY_SHIFT_ENTER 0x122
 
 /* Sentinel for multi-byte UTF-8 input (returned by term_read_key) */
 #define KEY_UTF8      (-2)

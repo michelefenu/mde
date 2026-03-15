@@ -36,14 +36,17 @@ $(BUILDDIR):
 TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
             $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o \
             $(BUILDDIR)/render_olist.o $(BUILDDIR)/render_ulist.o \
-            $(BUILDDIR)/render_todo.o \
+            $(BUILDDIR)/render_todo.o $(BUILDDIR)/render_hrule.o \
             $(BUILDDIR)/links.o $(BUILDDIR)/term.o
 
-test: $(BUILDDIR)/test_runner
-	./$(BUILDDIR)/test_runner
+TEST_SRCS    = $(wildcard tests/*.c)
+TEST_RUNNERS = $(patsubst tests/%.c,$(BUILDDIR)/%_runner,$(TEST_SRCS))
 
-$(BUILDDIR)/test_runner: tests/test_main.c $(TEST_OBJS) | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) tests/test_main.c $(TEST_OBJS) -o $@ $(LDFLAGS)
+test: $(TEST_RUNNERS)
+	@for t in $(TEST_RUNNERS); do ./$$t; done
+
+$(BUILDDIR)/%_runner: tests/%.c $(TEST_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $< $(TEST_OBJS) -o $@ $(LDFLAGS)
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
