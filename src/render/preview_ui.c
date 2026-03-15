@@ -4,7 +4,6 @@
 #include "toc.h"
 #include "search.h"
 #include "command.h"
-#include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

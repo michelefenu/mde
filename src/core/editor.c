@@ -8,63 +8,12 @@
 #include "preview_ui.h"
 #include "toc.h"
 #include "command.h"
-#include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <ctype.h>
-#include <wchar.h>
-
-/* Sentinel returned by editor_read_key() for non-ASCII characters.
-   The actual UTF-8 bytes are in the output buffer. */
-#define KEY_UTF8 (-2)
-
-/* ================================================================
- *  Portable key reading  (uses get_wch on wide ncurses, getch otherwise)
- * ================================================================ */
-
-/* Read one key event.
-   - ASCII chars and KEY_* constants are returned directly.
-   - Non-ASCII Unicode characters: fills utf8_buf, sets *utf8_len,
-     and returns KEY_UTF8 as a sentinel. */
-static int editor_read_key(char utf8_buf[4], int *utf8_len)
-{
-    *utf8_len = 0;
-
-#if NCURSES_WIDECHAR
-    wint_t wc;
-    int ret = get_wch(&wc);
-    if (ret == ERR) return ERR;
-    if (ret == KEY_CODE_YES) return (int)wc;   /* function key */
-    if ((int)wc < 0x80) return (int)wc;        /* ASCII */
-    /* Non-ASCII: encode as UTF-8 */
-    *utf8_len = wchar_to_utf8((unsigned long)wc, utf8_buf);
-    return KEY_UTF8;
-#else
-    int c = getch();
-    if (c == ERR || c < 0x80 || c >= 0x100) return c;
-    /* Raw high byte — assemble UTF-8 sequence */
-    utf8_buf[0] = (char)c;
-    unsigned char uc = (unsigned char)c;
-    int expected = 1;
-    if      (uc >= 0xF0) expected = 4;
-    else if (uc >= 0xE0) expected = 3;
-    else if (uc >= 0xC0) expected = 2;
-    for (int i = 1; i < expected; i++) {
-        int next = getch();
-        if (next == ERR || (next & 0xC0) != 0x80) {
-            if (next != ERR) ungetch(next);
-            *utf8_len = i;
-            return KEY_UTF8;
-        }
-        utf8_buf[i] = (char)next;
-    }
-    *utf8_len = expected;
-    return KEY_UTF8;
-#endif
-}
 
 /* ================================================================
  *  Status message
@@ -96,7 +45,7 @@ char *editor_prompt(Editor *ed, const char *prompt_str,
 
         char utf8[4];
         int  utf8_len;
-        int  c = editor_read_key(utf8, &utf8_len);
+        int  c = term_read_key(utf8, &utf8_len);
 
         if (c == KEY_RESIZE) {
             getmaxyx(stdscr, ed->screen_rows, ed->screen_cols);
@@ -673,7 +622,7 @@ static void editor_draw_preview_rows(Editor *ed)
             int remaining = ed->screen_rows - y;
             int used = preview_draw_line_wrapped(y, ed->screen_cols,
                                                  &ed->preview_buf.lines[prow],
-                                                 remaining);
+                                                 remaining, 0);
             if (ed->search_query_len > 0)
                 preview_highlight_search_wrapped(y, ed->screen_cols,
                                                  &ed->preview_buf.lines[prow],
@@ -693,7 +642,7 @@ static void editor_draw_preview_rows(Editor *ed)
             int prow = ed->preview_scroll_y + y;
             if (prow < ed->preview_buf.num_lines) {
                 preview_draw_line(y, ed->screen_cols,
-                                  &ed->preview_buf.lines[prow], 0);
+                                  &ed->preview_buf.lines[prow], 0, 0);
                 if (ed->search_query_len > 0)
                     preview_highlight_search(y, ed->screen_cols,
                                              &ed->preview_buf.lines[prow], 0,
@@ -716,7 +665,7 @@ static void editor_draw_help_rows(Editor *ed)
             int remaining = ed->screen_rows - y;
             int used = preview_draw_line_wrapped(y, ed->screen_cols,
                                                  &ed->help_buf.lines[prow],
-                                                 remaining);
+                                                 remaining, 0);
             y += used;
             prow++;
         }
@@ -730,7 +679,7 @@ static void editor_draw_help_rows(Editor *ed)
             int prow = ed->help_scroll_y + y;
             if (prow < ed->help_buf.num_lines) {
                 preview_draw_line(y, ed->screen_cols,
-                                  &ed->help_buf.lines[prow], 0);
+                                  &ed->help_buf.lines[prow], 0, 0);
             } else {
                 move(y, 0);
                 clrtoeol();
@@ -744,10 +693,9 @@ static void editor_draw_toc_rows(Editor *ed)
     for (int y = 0; y < ed->screen_rows; y++) {
         int prow = ed->toc_scroll_y + y;
         if (prow < ed->toc_buf.num_lines) {
+            attr_t overlay = (prow == ed->toc_selected) ? A_REVERSE : 0;
             preview_draw_line(y, ed->screen_cols,
-                              &ed->toc_buf.lines[prow], 0);
-            if (prow == ed->toc_selected)
-                mvchgat(y, 0, -1, A_REVERSE, 0, NULL);
+                              &ed->toc_buf.lines[prow], 0, overlay);
         } else {
             move(y, 0);
             clrtoeol();
@@ -937,7 +885,7 @@ static void editor_process_key(Editor *ed)
 {
     char utf8[4];
     int  utf8_len;
-    int  c = editor_read_key(utf8, &utf8_len);
+    int  c = term_read_key(utf8, &utf8_len);
 
     /* TOC mode has its own key handler */
     if (ed->toc_mode) {
@@ -1091,7 +1039,7 @@ static void editor_process_key(Editor *ed)
         editor_toggle_preview(ed);
         break;
 
-    /* ── Non-ASCII character (from editor_read_key) ── */
+    /* ── Non-ASCII character (from term_read_key) ── */
     case KEY_UTF8:
         for (int i = 0; i < utf8_len; i++)
             editor_insert_char(ed, (unsigned char)utf8[i]);

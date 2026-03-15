@@ -1,7 +1,6 @@
 /* help — Load embedded help.md into preview buffer and display. */
 #include "help.h"
 #include "help_md.h"
-#include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
 

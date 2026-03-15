@@ -26,10 +26,6 @@ int render_byte_to_col(const char *text, int len, int byte_pos)
     return col;
 }
 
-/* Attribute used for dimmed / syntax marker characters.
-   Updated at init time based on terminal colour depth. */
-static attr_t g_dim_attr = A_DIM;
-
 /* ================================================================
  *  Colour initialisation
  * ================================================================ */
@@ -40,11 +36,8 @@ void render_init_colors(void)
     start_color();
     use_default_colors();
 
-    short dim_fg = COLOR_WHITE;
-    if (COLORS >= 256) {
-        dim_fg    = 245;      /* medium grey in 256-colour mode */
-        g_dim_attr = 0;        /* colour alone is enough */
-    }
+    /* COLORS is always 256 — use grey 245 for dimmed text */
+    short dim_fg = 245;
 
     init_pair(CP_HEADING1,    COLOR_CYAN,    -1);
     init_pair(CP_HEADING2,    COLOR_GREEN,   -1);
@@ -194,7 +187,7 @@ static void apply_code_spans(const char *text, int len,
 
         if (close >= 0) {
             for (int j = start; j < start + bt; j++) {
-                styles[j].attr  = g_dim_attr;
+                styles[j].attr  = 0;
                 styles[j].cpair = CP_DIMMED;
                 claimed[j] = 1;
             }
@@ -203,7 +196,7 @@ static void apply_code_spans(const char *text, int len,
                 claimed[j] = 2;
             }
             for (int j = close; j < close + bt; j++) {
-                styles[j].attr  = g_dim_attr;
+                styles[j].attr  = 0;
                 styles[j].cpair = CP_DIMMED;
                 claimed[j] = 1;
             }
@@ -240,7 +233,7 @@ static void apply_emphasis(const char *text, int len,
 
         /* Opening delimiters → dimmed */
         for (int j = start; j < start + dcount; j++) {
-            styles[j].attr  = g_dim_attr;
+            styles[j].attr  = 0;
             styles[j].cpair = CP_DIMMED;
             claimed[j] = 1;
         }
@@ -256,7 +249,7 @@ static void apply_emphasis(const char *text, int len,
 
         /* Closing delimiters → dimmed */
         for (int j = close; j < close + dcount && j < len; j++) {
-            styles[j].attr  = g_dim_attr;
+            styles[j].attr  = 0;
             styles[j].cpair = CP_DIMMED;
             claimed[j] = 1;
         }
@@ -283,16 +276,16 @@ static void apply_strikethrough(const char *text, int len,
         }
         if (close < 0) continue;
 
-        styles[start].attr     = g_dim_attr; styles[start].cpair     = CP_DIMMED; claimed[start]     = 1;
-        styles[start + 1].attr = g_dim_attr; styles[start + 1].cpair = CP_DIMMED; claimed[start + 1] = 1;
+        styles[start].attr     = 0; styles[start].cpair     = CP_DIMMED; claimed[start]     = 1;
+        styles[start + 1].attr = 0; styles[start + 1].cpair = CP_DIMMED; claimed[start + 1] = 1;
 
         for (int j = start + 2; j < close; j++) {
             if (claimed[j] != 1)
-                styles[j].attr |= A_DIM;
+                styles[j].attr |= A_STRIKETHROUGH;
         }
 
-        styles[close].attr     = g_dim_attr; styles[close].cpair     = CP_DIMMED; claimed[close]     = 1;
-        styles[close + 1].attr = g_dim_attr; styles[close + 1].cpair = CP_DIMMED; claimed[close + 1] = 1;
+        styles[close].attr     = 0; styles[close].cpair     = CP_DIMMED; claimed[close]     = 1;
+        styles[close + 1].attr = 0; styles[close + 1].cpair = CP_DIMMED; claimed[close + 1] = 1;
         i = close + 2;
     }
 }
@@ -322,14 +315,14 @@ static void apply_links(const char *text, int len,
 
         /* ! before [ */
         if (img_bang) {
-            styles[i - 1].attr = g_dim_attr;
+            styles[i - 1].attr = 0;
             styles[i - 1].cpair = CP_DIMMED;
             claimed[i - 1] = 1;
         }
 
         /* [ and ] */
-        styles[i].attr           = g_dim_attr; styles[i].cpair           = CP_DIMMED; claimed[i]           = 1;
-        styles[bracket_end].attr = g_dim_attr; styles[bracket_end].cpair = CP_DIMMED; claimed[bracket_end] = 1;
+        styles[i].attr           = 0; styles[i].cpair           = CP_DIMMED; claimed[i]           = 1;
+        styles[bracket_end].attr = 0; styles[bracket_end].cpair = CP_DIMMED; claimed[bracket_end] = 1;
 
         /* Link text → coloured + underlined */
         for (int j = i + 1; j < bracket_end; j++) {
@@ -342,7 +335,7 @@ static void apply_links(const char *text, int len,
 
         /* (url) → dimmed */
         for (int j = bracket_end + 1; j <= paren_end; j++) {
-            styles[j].attr  = g_dim_attr;
+            styles[j].attr  = 0;
             styles[j].cpair = CP_URL;
             claimed[j] = 1;
         }
@@ -389,12 +382,12 @@ static void mark_block_markers(const char *line, int len,
     case BLOCK_HEADING:
         while (i < len && line[i] == ' ') i++;
         while (i < len && line[i] == '#') {
-            styles[i].attr  = g_dim_attr;
+            styles[i].attr  = 0;
             styles[i].cpair = CP_DIMMED;
             i++;
         }
         if (i < len && line[i] == ' ') {
-            styles[i].attr  = g_dim_attr;
+            styles[i].attr  = 0;
             styles[i].cpair = CP_DIMMED;
         }
         break;
@@ -489,7 +482,7 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
 
     case BLOCK_CODE_FENCE:
         for (int i = 0; i < len; i++) {
-            styles[i].attr  = g_dim_attr;
+            styles[i].attr  = 0;
             styles[i].cpair = CP_CODE_BLOCK;
         }
         return;
@@ -1203,8 +1196,39 @@ void preview_free(PreviewBuffer *pb)
     memset(pb, 0, sizeof(*pb));
 }
 
+/* Map a PM_* marker to its UTF-8 box-drawing representation.
+   Returns a 3-byte UTF-8 string (or "?" for unknowns). */
+static const char *acs_to_utf8(unsigned char id)
+{
+    switch (id) {
+    case PM_VLINE:    return "\xe2\x94\x82";  /* │ */
+    case PM_HLINE:    return "\xe2\x94\x80";  /* ─ */
+    case PM_ULCORNER: return "\xe2\x94\x8c";  /* ┌ */
+    case PM_URCORNER: return "\xe2\x94\x90";  /* ┐ */
+    case PM_LLCORNER: return "\xe2\x94\x94";  /* └ */
+    case PM_LRCORNER: return "\xe2\x94\x98";  /* ┘ */
+    case PM_LTEE:     return "\xe2\x94\x9c";  /* ├ */
+    case PM_RTEE:     return "\xe2\x94\xa4";  /* ┤ */
+    case PM_TTEE:     return "\xe2\x94\xac";  /* ┬ */
+    case PM_BTEE:     return "\xe2\x94\xb4";  /* ┴ */
+    case PM_PLUS:     return "\xe2\x94\xbc";  /* ┼ */
+    case PM_BULLET:   return "\xe2\x80\xa2";  /* • */
+    default:          return "?";
+    }
+}
+
+/* Draw one ACS character as UTF-8 with the given attribute. */
+static void draw_acs_char(unsigned char acs_id, attr_t a)
+{
+    const char *utf8 = acs_to_utf8(acs_id);
+    int n = (utf8[0] == '?') ? 1 : 3;
+    attron(a);
+    addnstr(utf8, n);
+    attroff(a);
+}
+
 void preview_draw_line(int screen_y, int screen_cols,
-                       PreviewLine *pl, int scroll_x)
+                       PreviewLine *pl, int scroll_x, attr_t overlay)
 {
     move(screen_y, 0);
     clrtoeol();
@@ -1212,25 +1236,14 @@ void preview_draw_line(int screen_y, int screen_cols,
     int col = 0;
     int i = scroll_x;
     while (i < pl->len && col < screen_cols) {
-        attr_t a = COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr;
+        attr_t a = (COLOR_PAIR(pl->styles[i].cpair) | pl->styles[i].attr) | overlay;
         if (pl->styles[i].acs) {
-            chtype acs;
-            switch (pl->styles[i].acs) {
-            case PM_VLINE:    acs = ACS_VLINE;    break;
-            case PM_HLINE:    acs = ACS_HLINE;    break;
-            case PM_ULCORNER: acs = ACS_ULCORNER; break;
-            case PM_URCORNER: acs = ACS_URCORNER; break;
-            case PM_LLCORNER: acs = ACS_LLCORNER; break;
-            case PM_LRCORNER: acs = ACS_LRCORNER; break;
-            case PM_LTEE:     acs = ACS_LTEE;     break;
-            case PM_RTEE:     acs = ACS_RTEE;     break;
-            case PM_TTEE:     acs = ACS_TTEE;     break;
-            case PM_BTEE:     acs = ACS_BTEE;     break;
-            case PM_PLUS:     acs = ACS_PLUS;     break;
-            case PM_BULLET:   acs = ACS_BULLET;   break;
-            default:          acs = '?';           break;
-            }
-            addch(acs | a);
+            const char *utf8 = acs_to_utf8(pl->styles[i].acs);
+            int n = (utf8[0] == '?') ? 1 : 3;
+            attron(a);
+            addnstr(utf8, n);
+            attroff(a);
+            col++;
             i++;
         } else {
             int clen = utf8_clen((unsigned char)pl->text[i]);
@@ -1334,34 +1347,12 @@ int preview_wrap_height(PreviewLine *pl, int cols)
     return rows;
 }
 
-/* Draw one ACS character with its style. */
-static void draw_acs_char(unsigned char acs_id, attr_t a)
-{
-    chtype acs;
-    switch (acs_id) {
-    case PM_VLINE:    acs = ACS_VLINE;    break;
-    case PM_HLINE:    acs = ACS_HLINE;    break;
-    case PM_ULCORNER: acs = ACS_ULCORNER; break;
-    case PM_URCORNER: acs = ACS_URCORNER; break;
-    case PM_LLCORNER: acs = ACS_LLCORNER; break;
-    case PM_LRCORNER: acs = ACS_LRCORNER; break;
-    case PM_LTEE:     acs = ACS_LTEE;     break;
-    case PM_RTEE:     acs = ACS_RTEE;     break;
-    case PM_TTEE:     acs = ACS_TTEE;     break;
-    case PM_BTEE:     acs = ACS_BTEE;     break;
-    case PM_PLUS:     acs = ACS_PLUS;     break;
-    case PM_BULLET:   acs = ACS_BULLET;   break;
-    default:          acs = '?';           break;
-    }
-    addch(acs | a);
-}
-
 int preview_draw_line_wrapped(int screen_y, int screen_cols,
-                              PreviewLine *pl, int max_rows)
+                              PreviewLine *pl, int max_rows, attr_t overlay)
 {
     /* Table lines contain ACS box-drawing chars — never word-wrap them */
     if (preview_line_is_table(pl)) {
-        preview_draw_line(screen_y, screen_cols, pl, 0);
+        preview_draw_line(screen_y, screen_cols, pl, 0, overlay);
         return 1;
     }
 
@@ -1383,7 +1374,7 @@ int preview_draw_line_wrapped(int screen_y, int screen_cols,
             for (int k = 0; k < indent; k++) {
                 if (k < pl->len && pl->styles[k].acs == PM_VLINE) {
                     /* Replicate blockquote vertical bar */
-                    attr_t a = COLOR_PAIR(pl->styles[k].cpair) | pl->styles[k].attr;
+                    attr_t a = (COLOR_PAIR(pl->styles[k].cpair) | pl->styles[k].attr) | overlay;
                     draw_acs_char(PM_VLINE, a);
                 } else {
                     addch(' ');
@@ -1394,7 +1385,7 @@ int preview_draw_line_wrapped(int screen_y, int screen_cols,
         /* draw segment [i, end) */
         int j = i;
         while (j < end) {
-            attr_t a = COLOR_PAIR(pl->styles[j].cpair) | pl->styles[j].attr;
+            attr_t a = (COLOR_PAIR(pl->styles[j].cpair) | pl->styles[j].attr) | overlay;
             if (pl->styles[j].acs) {
                 draw_acs_char(pl->styles[j].acs, a);
                 j++;
@@ -1476,23 +1467,12 @@ static void preview_redraw_hl(int screen_y, int screen_col, int screen_cols,
     int i = byte_start;
     while (i < byte_end && col < screen_cols) {
         if (pl->styles[i].acs) {
-            chtype acs;
-            switch (pl->styles[i].acs) {
-            case PM_VLINE:    acs = ACS_VLINE;    break;
-            case PM_HLINE:    acs = ACS_HLINE;    break;
-            case PM_ULCORNER: acs = ACS_ULCORNER; break;
-            case PM_URCORNER: acs = ACS_URCORNER; break;
-            case PM_LLCORNER: acs = ACS_LLCORNER; break;
-            case PM_LRCORNER: acs = ACS_LRCORNER; break;
-            case PM_LTEE:     acs = ACS_LTEE;     break;
-            case PM_RTEE:     acs = ACS_RTEE;     break;
-            case PM_TTEE:     acs = ACS_TTEE;     break;
-            case PM_BTEE:     acs = ACS_BTEE;     break;
-            case PM_PLUS:     acs = ACS_PLUS;     break;
-            case PM_BULLET:   acs = ACS_BULLET;   break;
-            default:          acs = '?';           break;
-            }
-            mvaddch(screen_y, col, acs | hl);
+            const char *utf8 = acs_to_utf8(pl->styles[i].acs);
+            int n = (utf8[0] == '?') ? 1 : 3;
+            move(screen_y, col);
+            attron(hl);
+            addnstr(utf8, n);
+            attroff(hl);
             col++;
             i++;
         } else {

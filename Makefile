@@ -1,17 +1,16 @@
 CC      ?= cc
 CFLAGS   = -Wall -Wextra -std=gnu99 -O2 -D_XOPEN_SOURCE_EXTENDED
-LDFLAGS  = $(shell pkg-config --libs ncursesw 2>/dev/null || echo "-lncurses")
-CFLAGS  += $(shell pkg-config --cflags ncursesw 2>/dev/null)
+LDFLAGS  =
 
 SRCDIR   = src
 BUILDDIR = build
 TARGET   = mde
 
-SUBDIRS  = core render features utils
+SUBDIRS  = core render features utils term
 SRCS     = $(foreach d,$(SUBDIRS),$(wildcard $(SRCDIR)/$(d)/*.c))
 OBJS     = $(addprefix $(BUILDDIR)/,$(notdir $(SRCS:.c=.o)))
 INCLUDES = -I$(SRCDIR)/core -I$(SRCDIR)/render -I$(SRCDIR)/features \
-           -I$(SRCDIR)/utils -I$(BUILDDIR)
+           -I$(SRCDIR)/utils -I$(SRCDIR)/term -I$(BUILDDIR)
 
 vpath %.c $(foreach d,$(SUBDIRS),$(SRCDIR)/$(d))
 
@@ -38,7 +37,7 @@ TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
             $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o \
             $(BUILDDIR)/render_olist.o $(BUILDDIR)/render_ulist.o \
             $(BUILDDIR)/render_todo.o \
-            $(BUILDDIR)/links.o
+            $(BUILDDIR)/links.o $(BUILDDIR)/term.o
 
 test: $(BUILDDIR)/test_runner
 	./$(BUILDDIR)/test_runner

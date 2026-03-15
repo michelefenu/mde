@@ -2,7 +2,7 @@
 #include "command.h"
 #include "links.h"
 #include "preview_ui.h"
-#include <ncurses.h>
+#include "term.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -31,11 +31,9 @@ static void open_url(Editor *ed, const char *url)
 #else
     snprintf(cmd, sizeof(cmd), "xdg-open '%s' >/dev/null 2>&1", url);
 #endif
-    def_prog_mode();
-    endwin();
+    term_suspend();
     int ret = system(cmd);
-    reset_prog_mode();
-    refresh();
+    term_resume();
     if (ret != 0)
         editor_set_status(ed, "Failed to open: %s", url);
     else

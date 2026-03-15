@@ -2,7 +2,7 @@
 #ifndef RENDER_H
 #define RENDER_H
 
-#include <ncurses.h>
+#include "term.h"
 #include "buffer.h"
 
 /* Color pairs */
@@ -100,10 +100,10 @@ typedef struct {
 void preview_generate(PreviewBuffer *pb, Buffer *buf, int screen_cols);
 void preview_free(PreviewBuffer *pb);
 void preview_draw_line(int screen_y, int screen_cols,
-                       PreviewLine *pl, int scroll_x);
+                       PreviewLine *pl, int scroll_x, attr_t overlay);
 int  preview_wrap_height(PreviewLine *pl, int cols);
 int  preview_draw_line_wrapped(int screen_y, int screen_cols,
-                               PreviewLine *pl, int max_rows);
+                               PreviewLine *pl, int max_rows, attr_t overlay);
 int  preview_find_line(PreviewBuffer *pb, int buffer_row);
 void preview_highlight_search(int screen_y, int screen_cols,
                               PreviewLine *pl, int scroll_x,

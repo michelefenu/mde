@@ -1,7 +1,6 @@
 /* toc — Scan buffer for headings, build TOC preview with indentation. */
 #include "toc.h"
 #include "preview_ui.h"
-#include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
 
