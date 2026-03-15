@@ -29,12 +29,8 @@ output.
 
 ## Requirements
 
-A C99 compiler (gcc or clang) and the ncurses development library.
-
-- **macOS** - included with Xcode Command Line Tools
-- **Debian / Ubuntu** - `sudo apt install libncurses-dev`
-- **Fedora** - `sudo dnf install ncurses-devel`
-- **Arch** - `sudo pacman -S ncurses`
+A C99 compiler (gcc or clang). No external libraries required — terminal
+I/O is handled via POSIX interfaces (`termios`, `ioctl`, ANSI escape sequences).
 
 ## Compiling
 
@@ -114,7 +110,7 @@ src/
   main.c          - entry point, locale init, event loop
   editor.h/c      - editor state, key dispatch, file I/O
   buffer.h/c      - line-based text buffer
-  render.h/c      - markdown parser and ncurses rendering
+  render.h/c      - markdown parser and terminal rendering
   undo.h/c        - append-only undo/redo stack
   search.h/c      - incremental search with highlighting
   utf8.h/c        - UTF-8 helpers
