@@ -1,6 +1,7 @@
 /* toc — Scan buffer for headings, build TOC preview with indentation. */
 #include "toc.h"
 #include "preview_ui.h"
+#include "render_heading.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,14 +31,11 @@ static void toc_generate(PreviewBuffer *pb, Buffer *buf)
 
         found = 1;
 
-        /* Skip leading spaces and '#' chars and the mandatory space */
-        const char *p = line;
-        while (*p == ' ') p++;
-        while (*p == '#') p++;
-        if (*p == ' ') p++;
-
-        int text_len = (int)(line + len - p);
-        if (text_len < 0) text_len = 0;
+        /* Extract the visible heading content (CommonMark 4.2 compliant) */
+        int cstart, clen;
+        render_heading_content(line, len, &cstart, &clen);
+        const char *p = line + cstart;
+        int text_len = clen;
 
         int indent = (level - 1) * 2;
         int pl_len = indent + text_len;

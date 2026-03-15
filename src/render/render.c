@@ -1,6 +1,7 @@
 /* render — Block/inline markdown rendering to ncurses, preview buffer construction. */
 #include "render.h"
 #include "render_hrule.h"
+#include "render_heading.h"
 #include "render_table.h"
 #include "render_olist.h"
 #include "render_ulist.h"
@@ -382,7 +383,7 @@ static void mark_block_markers(const char *line, int len,
     int i = 0;
 
     switch (btype) {
-    case BLOCK_HEADING:
+    case BLOCK_HEADING: {
         while (i < len && line[i] == ' ') i++;
         while (i < len && line[i] == '#') {
             styles[i].attr  = 0;
@@ -392,8 +393,18 @@ static void mark_block_markers(const char *line, int len,
         if (i < len && line[i] == ' ') {
             styles[i].attr  = 0;
             styles[i].cpair = CP_DIMMED;
+            i++;
+        }
+        /* Dim the closing # sequence (and preceding space), if present */
+        int cstart, clen;
+        render_heading_content(line, len, &cstart, &clen);
+        int content_end = cstart + clen;
+        for (int j = content_end; j < len; j++) {
+            styles[j].attr  = 0;
+            styles[j].cpair = CP_DIMMED;
         }
         break;
+    }
 
     case BLOCK_BLOCKQUOTE:
         while (i < len && line[i] == ' ') i++;
@@ -847,47 +858,6 @@ void pv_set_acs(PreviewLine *pl, int pos,
  *  Preview generators — one per block type
  * ================================================================ */
 
-static void gen_heading(PreviewBuffer *pb, const char *line, int len,
-                        int source_row, int screen_cols, int *link_idx)
-{
-    int hlevel = render_heading_level(line);
-    int indent = (hlevel <= 1) ? 0 : (hlevel - 1) * 2;
-    if (indent > 8) indent = 8;
-
-    short cpair;
-    switch (hlevel) {
-    case 1:  cpair = CP_HEADING1; break;
-    case 2:  cpair = CP_HEADING2; break;
-    case 3:  cpair = CP_HEADING3; break;
-    default: cpair = CP_HEADING4; break;
-    }
-
-    /* Skip past # markers */
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    while (i < len && line[i] == '#') i++;
-    if (i < len && line[i] == ' ') i++;
-
-    char *ct; CharStyle *cs; int cl;
-    strip_inline(line + i, len - i, A_BOLD, cpair, &ct, &cs, &cl, link_idx);
-
-    int total = indent + cl;
-    PreviewLine *pl = pv_add(pb, source_row, total);
-    int p = pv_fill(pl, 0, indent, ' ', 0, CP_DEFAULT);
-    p = pv_copy(pl, p, ct, cs, cl);
-    pl->len = p; pl->text[p] = '\0';
-    free(ct); free(cs);
-
-    /* H1 gets an underline */
-    if (hlevel == 1 && cl > 0) {
-        int uw = indent + cl;
-        if (uw > screen_cols) uw = screen_cols;
-        PreviewLine *ul = pv_add(pb, source_row, uw);
-        pv_fill_acs(ul, 0, uw, PM_HLINE, A_BOLD, cpair);
-        ul->text[uw] = '\0';
-    }
-}
-
 static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
                           int source_row, int body_indent, int *link_idx)
 {
@@ -1213,9 +1183,8 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
         }
         case BLOCK_SETEXT_H1:
         case BLOCK_SETEXT_H2:
-            /* CommonMark 4.1: not a thematic break when prev line is paragraph.
-               Suppress the underline line in preview; Section 4.2 will render
-               the heading properly. */
+            /* Fallback: setext underline without a preceding paragraph
+               (e.g. at the top of the document).  Suppress in preview. */
             gen_empty(pb, vlines[row].source_row);
             prev_para = NULL;
             row++;
@@ -1228,6 +1197,24 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
             break;
         case BLOCK_EMPTY:
             gen_empty(pb, vlines[row].source_row); break;
+        case BLOCK_PARAGRAPH: {
+            /* CommonMark 4.3: look ahead for a setext underline. */
+            if (!in_code && row + 1 < n) {
+                int su = render_is_setext_underline(vlines[row + 1].text);
+                if (su) {
+                    gen_setext_heading(pb, line, len, vlines[row].source_row,
+                                       su, screen_cols, link_idx);
+                    gen_empty(pb, vlines[row + 1].source_row);
+                    body_indent = (su == 1) ? 0 : 2;
+                    prev_para = NULL;
+                    row += 2;
+                    continue;
+                }
+            }
+            gen_paragraph(pb, line, len, vlines[row].source_row, body_indent,
+                          link_idx);
+            break;
+        }
         default:
             gen_paragraph(pb, line, len, vlines[row].source_row, body_indent,
                           link_idx);

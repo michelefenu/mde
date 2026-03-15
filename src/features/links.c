@@ -1,6 +1,7 @@
 /* links — Parse [text](url) links, GitHub-style slug generation. */
 #include "links.h"
 #include "render.h"
+#include "render_heading.h"
 #include "utf8.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -152,15 +153,11 @@ int links_find_anchor(Buffer *buf, const char *anchor)
         int level = render_heading_level(line);
         if (level == 0) continue;
 
-        /* Skip leading spaces, '#' chars, and the mandatory space
-           (same pattern as toc.c) */
-        const char *p = line;
-        while (*p == ' ') p++;
-        while (*p == '#') p++;
-        if (*p == ' ') p++;
-
-        int text_len = (int)(line + len - p);
-        if (text_len < 0) text_len = 0;
+        /* Extract visible heading content (CommonMark 4.2 compliant) */
+        int cstart, clen;
+        render_heading_content(line, len, &cstart, &clen);
+        const char *p = line + cstart;
+        int text_len = clen;
 
         /* Strip inline Markdown to get plain text */
         char *plain_text = NULL;
