@@ -2,6 +2,7 @@
 #include "editor.h"
 #include "render.h"
 #include "render_table.h"
+#include "render_frontmatter.h"
 #include "utf8.h"
 #include "search.h"
 #include "help.h"
@@ -530,6 +531,8 @@ static void editor_draw_rows(Editor *ed)
             in_code = !in_code;
     }
 
+    int fm_end = render_frontmatter_extent(&ed->buf);
+
     if (ed->word_wrap) {
         /* ── Wrapped mode: one buffer line may span multiple screen rows ── */
         int y = 0;
@@ -537,7 +540,9 @@ static void editor_draw_rows(Editor *ed)
         while (y < ed->screen_rows && frow < ed->buf.num_lines) {
             char     *line = buffer_line_data(&ed->buf, frow);
             int       len  = buffer_line_len(&ed->buf, frow);
-            BlockType bt   = render_get_block_type(line, in_code);
+            BlockType bt   = (fm_end >= 0 && frow <= fm_end)
+                             ? BLOCK_FRONTMATTER
+                             : render_get_block_type(line, in_code);
             int       hl   = (bt == BLOCK_HEADING)
                              ? render_heading_level(line) : 0;
 
@@ -575,7 +580,9 @@ static void editor_draw_rows(Editor *ed)
             if (frow < ed->buf.num_lines) {
                 char     *line = buffer_line_data(&ed->buf, frow);
                 int       len  = buffer_line_len(&ed->buf, frow);
-                BlockType bt   = render_get_block_type(line, in_code);
+                BlockType bt   = (fm_end >= 0 && frow <= fm_end)
+                                 ? BLOCK_FRONTMATTER
+                                 : render_get_block_type(line, in_code);
                 int       hl   = (bt == BLOCK_HEADING)
                                  ? render_heading_level(line) : 0;
 

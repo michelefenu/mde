@@ -2,6 +2,7 @@
 #include "render.h"
 #include "render_hrule.h"
 #include "render_heading.h"
+#include "render_frontmatter.h"
 #include "render_table.h"
 #include "render_olist.h"
 #include "render_ulist.h"
@@ -64,6 +65,7 @@ void render_init_colors(void)
     init_pair(CP_TODO_OPEN,   COLOR_GREEN,   -1);
     init_pair(CP_TODO_DONE,   dim_fg,        -1);
     init_pair(CP_TODO_META,   COLOR_MAGENTA, -1);
+    init_pair(CP_FRONTMATTER, dim_fg,        -1);
 }
 
 /* ================================================================
@@ -512,6 +514,13 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
         for (int i = 0; i < len; i++) {
             styles[i].attr  = A_DIM;
             styles[i].cpair = CP_HRULE;
+        }
+        return;
+
+    case BLOCK_FRONTMATTER:
+        for (int i = 0; i < len; i++) {
+            styles[i].attr  = A_DIM;
+            styles[i].cpair = CP_FRONTMATTER;
         }
         return;
 
@@ -1046,6 +1055,18 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
     int row = 0;
     int olist_active = 0, olist_counter = 0;
     const char *prev_para = NULL;
+
+    /* Front-matter: consume all FM rows before entering the main loop. */
+    if (depth == 0 && buf != NULL) {
+        int fm_end = render_frontmatter_extent(buf);
+        if (fm_end >= 0) {
+            while (row < n && vlines[row].source_row <= fm_end) {
+                gen_frontmatter_line(pb, vlines[row].text, vlines[row].len,
+                                     vlines[row].source_row);
+                row++;
+            }
+        }
+    }
 
     while (row < n) {
         const char *line = vlines[row].text;

@@ -26,6 +26,7 @@ enum {
     CP_TODO_OPEN,   /* open checkbox [ ] */
     CP_TODO_DONE,   /* completed task [x] */
     CP_TODO_META,   /* metadata: ~dur #tag @name date */
+    CP_FRONTMATTER, /* YAML front-matter fence and content */
 };
 
 /* Block-level element types */
@@ -41,6 +42,7 @@ typedef enum {
     BLOCK_BLOCKQUOTE,
     BLOCK_HRULE,
     BLOCK_EMPTY,
+    BLOCK_FRONTMATTER,  /* YAML front-matter line (fence or content) */
 } BlockType;
 
 /* Per-character style for rendering */

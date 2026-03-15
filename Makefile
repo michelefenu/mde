@@ -37,6 +37,7 @@ TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
             $(BUILDDIR)/render.o $(BUILDDIR)/render_table.o \
             $(BUILDDIR)/render_olist.o $(BUILDDIR)/render_ulist.o \
             $(BUILDDIR)/render_todo.o $(BUILDDIR)/render_hrule.o \
+            $(BUILDDIR)/render_frontmatter.o \
             $(BUILDDIR)/render_heading.o \
             $(BUILDDIR)/links.o $(BUILDDIR)/term.o
 
