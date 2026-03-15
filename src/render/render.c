@@ -796,6 +796,7 @@ void strip_inline(const char *src, int src_len,
                 text[len] = buf[k];
                 styles[len].attr  = base_attr;
                 styles[len].cpair = CP_DIMMED;
+                styles[len].acs   = 0;
                 len++;
             }
         }
