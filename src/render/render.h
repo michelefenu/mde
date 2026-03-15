@@ -39,11 +39,21 @@ typedef enum {
     BLOCK_LIST_ORDERED,
     BLOCK_CODE_FENCE,
     BLOCK_CODE_CONTENT,
+    BLOCK_CODE_INDENTED,   /* 4+ space/tab indent outside a paragraph (CommonMark 4.4) */
     BLOCK_BLOCKQUOTE,
     BLOCK_HRULE,
     BLOCK_EMPTY,
     BLOCK_FRONTMATTER,  /* YAML front-matter line (fence or content) */
 } BlockType;
+
+/* Virtual line abstraction used by preview_gen_vlines.
+   Allows the same generation logic to operate on either Buffer rows or
+   recursively-stripped blockquote inner content. */
+typedef struct {
+    const char *text;
+    int         len;
+    int         source_row;
+} VLine;
 
 /* Per-character style for rendering */
 typedef struct {
@@ -59,6 +69,7 @@ void      render_draw_line(int screen_y, int screen_cols,
 BlockType render_get_block_type(const char *line, int in_code_block);
 BlockType render_get_block_type_ctx(const char *line, const char *prev_line, int in_code_block);
 int       render_is_code_fence(const char *line);
+int       render_parse_fence(const char *line, char *out_fc);
 int       render_heading_level(const char *line);
 int       render_byte_to_col(const char *text, int len, int byte_pos);
 int       render_line_content_indent(const char *text, int len, BlockType btype);

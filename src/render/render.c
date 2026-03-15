@@ -7,6 +7,7 @@
 #include "render_olist.h"
 #include "render_ulist.h"
 #include "render_todo.h"
+#include "render_codeblock.h"
 #include "utf8.h"
 #include "xalloc.h"
 #include <stdio.h>
@@ -14,10 +15,6 @@
 #include <string.h>
 #include <ctype.h>
 
-/* Internal: a virtual line abstraction used by preview_gen_vlines.
-   Allows the same generation logic to operate on either Buffer rows or
-   recursively-stripped blockquote inner content. */
-typedef struct { const char *text; int len; int source_row; } VLine;
 
 /* Convert a byte offset to a display column offset.
    Both text and byte_pos are in raw bytes. */
@@ -72,17 +69,30 @@ void render_init_colors(void)
  *  Block-level detection helpers
  * ================================================================ */
 
-int render_is_code_fence(const char *line)
+/* Returns fence run length (>= 3) and sets *out_fc to '`' or '~'.
+   Returns 0 if line is not a valid fence opener/closer.
+   Up to 3 leading spaces are allowed; 4+ disqualifies. */
+int render_parse_fence(const char *line, char *out_fc)
 {
     int i = 0;
     while (i < 3 && line[i] == ' ') i++;
+    if (line[i] == ' ') return 0;   /* 4th space = indented code block */
 
     char fc = line[i];
     if (fc != '`' && fc != '~') return 0;
 
     int n = 0;
     while (line[i] == fc) { n++; i++; }
-    return n >= 3;
+    if (n < 3) return 0;
+
+    if (out_fc) *out_fc = fc;
+    return n;
+}
+
+int render_is_code_fence(const char *line)
+{
+    char fc;
+    return render_parse_fence(line, &fc) > 0;
 }
 
 int render_heading_level(const char *line)
@@ -504,6 +514,7 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
         return;
 
     case BLOCK_CODE_CONTENT:
+    case BLOCK_CODE_INDENTED:
         for (int i = 0; i < len; i++)
             styles[i].cpair = CP_CODE_BLOCK;
         return;
@@ -882,145 +893,6 @@ static void gen_paragraph(PreviewBuffer *pb, const char *line, int len,
 
 
 
-/* Return the number of display columns a UTF-8 string occupies.
-   Assumes all non-ASCII characters are single-column width. */
-static int utf8_display_width(const char *s, int len)
-{
-    int cols = 0;
-    for (int i = 0; i < len; ) {
-        int clen = utf8_clen((unsigned char)s[i]);
-        if (i + clen > len) clen = len - i;
-        cols += utf8_char_width(s, len, i);
-        i += clen;
-    }
-    return cols;
-}
-
-/* Generate a boxed code block from a VLine array.
-   fence_idx      = index into vlines of the opening ``` line.
-   content_start .. content_end-1 = vline indices of actual code content. */
-static void gen_code_block_v(PreviewBuffer *pb, const VLine *vlines, int n,
-                              int fence_idx, int content_start, int content_end,
-                              int screen_cols, int body_indent)
-{
-    /* Extract language label from opening fence */
-    const char *fence = vlines[fence_idx].text;
-    int flen = vlines[fence_idx].len;
-    int fi = 0;
-    while (fi < flen && (fence[fi] == ' ' || fence[fi] == '`' || fence[fi] == '~')) fi++;
-    int lang_start = fi;
-    while (fi < flen && fence[fi] != ' ' && fence[fi] != '`' && fence[fi] != '~') fi++;
-    int lang_len = fi - lang_start;
-
-    /* Find max content display width (columns, not bytes) */
-    int max_w = 0;
-    for (int r = content_start; r < content_end && r < n; r++) {
-        int dw = utf8_display_width(vlines[r].text, vlines[r].len);
-        if (dw > max_w) max_w = dw;
-    }
-
-    /* box_w is in display columns */
-    int box_w = max_w;
-    if (lang_len + 2 > box_w) box_w = lang_len + 2;
-    if (box_w < 20) box_w = 20;
-    int max_box = screen_cols - body_indent - 4;
-    if (max_box > 0 && box_w > max_box) box_w = max_box;
-
-    /* Border total is in display columns (all single-byte chars) */
-    int border_total = body_indent + box_w + 4;
-
-    /* ── Top border: ┌─ language ──────┐ ── */
-    {
-        PreviewLine *pl = pv_add(pb, vlines[fence_idx].source_row, border_total);
-        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
-        pv_set_acs(pl, p, PM_ULCORNER, 0, CP_DIMMED); p++;
-        if (lang_len > 0) {
-            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
-            pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
-            for (int j = 0; j < lang_len && p < border_total - 1; j++) {
-                pl->text[p] = fence[lang_start + j];
-                pl->styles[p].attr  = A_BOLD;
-                pl->styles[p].cpair = CP_CODE_BLOCK;
-                p++;
-            }
-            pl->text[p] = ' '; pl->styles[p].cpair = CP_DIMMED; p++;
-        }
-        while (p < border_total - 1) {
-            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
-        }
-        pv_set_acs(pl, p, PM_URCORNER, 0, CP_DIMMED); p++;
-        pl->len = p; pl->text[p] = '\0';
-    }
-
-    /* ── Content lines: │ code padded │ ──
-       Each line may have multi-byte UTF-8 chars, so its byte count can
-       exceed its display width.  We copy all bytes, then pad with spaces
-       to fill box_w display columns. */
-    for (int r = content_start; r < content_end && r < n; r++) {
-        const char *line = vlines[r].text;
-        int         len  = vlines[r].len;
-        int         dw   = utf8_display_width(line, len);
-
-        /* Truncate content to box_w display columns so the right border
-           always aligns, even when a line is wider than the box. */
-        int write_len = len;
-        int content_dw = dw;
-        if (dw > box_w) {
-            write_len  = 0;
-            content_dw = 0;
-            while (write_len < len) {
-                int clen = utf8_char_bytes(line, len, write_len);
-                int w    = utf8_char_width(line, len, write_len);
-                if (content_dw + w > box_w) break;
-                content_dw += w;
-                write_len  += clen;
-            }
-        }
-
-        int pad = box_w - content_dw;
-        /* byte length: indent + borders/spaces + content bytes + padding */
-        int line_bytes = body_indent + 4 + write_len + pad;
-
-        PreviewLine *pl = pv_add(pb, vlines[r].source_row, line_bytes);
-        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
-        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
-        pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
-        for (int j = 0; j < write_len; j++) {
-            pl->text[p]         = line[j];
-            pl->styles[p].cpair = CP_CODE_BLOCK;
-            p++;
-        }
-        p = pv_fill(pl, p, pad, ' ', 0, CP_CODE_BLOCK);
-        pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
-        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
-        pl->len = p; pl->text[p] = '\0';
-    }
-
-    /* If the code block is empty, add one blank content line */
-    if (content_start >= content_end) {
-        PreviewLine *pl = pv_add(pb, vlines[fence_idx].source_row, border_total);
-        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
-        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
-        p = pv_fill(pl, p, box_w + 2, ' ', 0, CP_CODE_BLOCK);
-        pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
-        pl->len = p; pl->text[p] = '\0';
-    }
-
-    /* ── Bottom border: └──────────────┘ ── */
-    {
-        int src = (content_end > content_start && content_end - 1 < n)
-                ? vlines[content_end - 1].source_row
-                : vlines[fence_idx].source_row;
-        PreviewLine *pl = pv_add(pb, src, border_total);
-        int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
-        pv_set_acs(pl, p, PM_LLCORNER, 0, CP_DIMMED); p++;
-        while (p < border_total - 1) {
-            pv_set_acs(pl, p, PM_HLINE, 0, CP_DIMMED); p++;
-        }
-        pv_set_acs(pl, p, PM_LRCORNER, 0, CP_DIMMED); p++;
-        pl->len = p; pl->text[p] = '\0';
-    }
-}
 
 static void gen_hrule(PreviewBuffer *pb, int source_row, int screen_cols,
                       int body_indent)
@@ -1042,6 +914,35 @@ static void gen_empty(PreviewBuffer *pb, int source_row)
  *  Recursive preview generator — operates on a VLine array
  * ================================================================ */
 
+/* Returns the byte offset where list-item content starts (= marker width W).
+   Returns 0 if the line is not a list item marker.
+   Handles up to 3 leading spaces, bullet (- + *) or ordered (digits + . or )),
+   followed by 1–4 spaces. */
+static int list_item_content_offset(const char *line, int len)
+{
+    int i = 0;
+    while (i < len && i < 3 && line[i] == ' ') i++;
+    if (i >= len) return 0;
+
+    if (line[i] == '-' || line[i] == '+' || line[i] == '*') {
+        i++;
+        int sp = 0;
+        while (i < len && line[i] == ' ' && sp < 4) { i++; sp++; }
+        return (sp >= 1) ? i : 0;
+    }
+    /* Ordered: 1–9 digits + (. or )) + 1–4 spaces */
+    int d = 0;
+    while (i < len && isdigit((unsigned char)line[i]) && d < 9) { i++; d++; }
+    if (d == 0) return 0;
+    if (i < len && (line[i] == '.' || line[i] == ')')) {
+        i++;
+        int sp = 0;
+        while (i < len && line[i] == ' ' && sp < 4) { i++; sp++; }
+        return (sp >= 1) ? i : 0;
+    }
+    return 0;
+}
+
 /* Forward declaration (recursive for nested blockquotes). */
 static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                                 int screen_cols, int body_indent, int *link_idx,
@@ -1055,6 +956,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
     int row = 0;
     int olist_active = 0, olist_counter = 0;
     const char *prev_para = NULL;
+    int prev_blank = 1;  /* start of document counts as blank for ICB detection */
 
     /* Front-matter: consume all FM rows before entering the main loop. */
     if (depth == 0 && buf != NULL) {
@@ -1077,15 +979,70 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
         if (bt != BLOCK_LIST_ORDERED)
             olist_active = 0;
 
+        /* Indented code block (CommonMark 4.4): 4+ spaces or 1 tab.
+           Must be preceded by a blank line (or start of document). */
+        if (!in_code && prev_blank) {
+            const char *l = vlines[row].text;
+            int ind = (l[0] == '\t') ? 4 : 0;
+            if (ind == 0) { while (ind < 4 && l[ind] == ' ') ind++; }
+            int is_empty = (render_get_block_type(l, 0) == BLOCK_EMPTY);
+
+            if (ind >= 4 && !is_empty) {
+                int icb_start = row, last_content = row;
+                while (row < n) {
+                    const char *cl = vlines[row].text;
+                    int ci = (cl[0] == '\t') ? 4 : 0;
+                    if (ci == 0) { while (ci < 4 && cl[ci] == ' ') ci++; }
+                    int blank = (render_get_block_type(cl, 0) == BLOCK_EMPTY);
+                    if (ci < 4 && !blank) break;
+                    if (!blank) last_content = row;
+                    row++;
+                }
+                int icb_end = last_content + 1; /* trailing blanks excluded */
+                int count = icb_end - icb_start;
+
+                /* Build stripped lines arrays (remove 4 spaces or 1 tab) */
+                const char **slines = malloc(count * sizeof(char *));
+                int         *slens  = malloc(count * sizeof(int));
+                int         *srows  = malloc(count * sizeof(int));
+                for (int k = 0; k < count; k++) {
+                    const char *cl = vlines[icb_start + k].text;
+                    int         cl_len = vlines[icb_start + k].len;
+                    int skip = (cl[0] == '\t') ? 1 : 4;
+                    if (skip > cl_len) skip = cl_len;
+                    slines[k] = cl + skip;
+                    slens[k]  = cl_len - skip;
+                    srows[k]  = vlines[icb_start + k].source_row;
+                }
+                gen_indented_code_block(pb, slines, slens, srows, count,
+                                        screen_cols, body_indent);
+                free(slines); free(slens); free(srows);
+                prev_para = NULL;
+                prev_blank = 0;
+                continue;
+            }
+        }
+
         if (bt == BLOCK_CODE_FENCE) {
             int fence_idx = row;
+            char open_fc;
+            int  open_len = render_parse_fence(vlines[fence_idx].text, &open_fc);
             row++;
             int content_start = row;
             int found_close = 0;
             while (row < n) {
-                if (render_is_code_fence(vlines[row].text)) {
-                    found_close = 1;
-                    break;
+                char  close_fc;
+                int   close_len = render_parse_fence(vlines[row].text, &close_fc);
+                if (close_len > 0 && close_fc == open_fc && close_len >= open_len) {
+                    /* Closing fence must not have an info string:
+                       after the fence chars only spaces are allowed */
+                    const char *cl = vlines[row].text;
+                    int ci = 0;
+                    while (ci < 3 && cl[ci] == ' ') ci++;
+                    while (cl[ci] == open_fc) ci++;
+                    int ok = 1;
+                    while (cl[ci] != '\0') { if (cl[ci] != ' ') { ok = 0; break; } ci++; }
+                    if (ok) { found_close = 1; break; }
                 }
                 row++;
             }
@@ -1094,6 +1051,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                              content_end, screen_cols, body_indent);
             if (found_close) row++;
             prev_para = NULL;
+            prev_blank = 0;
             continue;
         }
 
@@ -1111,6 +1069,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
             }
             gen_table_block(pb, buf, ts, row, screen_cols, body_indent, link_idx);
             prev_para = NULL;
+            prev_blank = 0;
             continue;
         }
 
@@ -1125,32 +1084,164 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
         case BLOCK_HRULE:
             gen_hrule(pb, vlines[row].source_row, screen_cols, body_indent);
             break;
-        case BLOCK_LIST_UNORDERED: {
+        case BLOCK_LIST_UNORDERED:
+        case BLOCK_LIST_ORDERED: {
+            int W = list_item_content_offset(line, len);
+            if (W <= 0) {
+                /* Not a valid marker — treat as paragraph */
+                gen_paragraph(pb, line, len, vlines[row].source_row, body_indent,
+                              link_idx);
+                prev_para = NULL;
+                prev_blank = 0;
+                row++;
+                continue;
+            }
+
+            /* GFM checkboxes: keep existing todo rendering unchanged */
             int is_done, cb_start, text_start;
-            if (parse_todo_item(line, len, &is_done, &cb_start, &text_start))
+            if (bt == BLOCK_LIST_UNORDERED &&
+                parse_todo_item(line, len, &is_done, &cb_start, &text_start)) {
                 gen_todo(pb, line, len, vlines[row].source_row, body_indent,
                          link_idx, is_done, text_start);
-            else
-                gen_ulist(pb, line, len, vlines[row].source_row, body_indent,
-                          link_idx);
-            break;
-        }
-        case BLOCK_LIST_ORDERED: {
-            if (!olist_active) {
-                int i = 0;
-                while (i < len && line[i] == ' ') i++;
-                olist_counter = 0;
-                while (i < len && isdigit((unsigned char)line[i])) {
-                    olist_counter = olist_counter * 10 + (line[i] - '0');
-                    i++;
-                }
-                olist_active = 1;
-            } else {
-                olist_counter++;
+                prev_para = NULL;
+                prev_blank = 0;
+                row++;
+                continue;
             }
-            gen_olist(pb, line, len, vlines[row].source_row, body_indent,
-                      link_idx, olist_counter);
-            break;
+
+            /* Track ordered list counter */
+            if (bt == BLOCK_LIST_ORDERED) {
+                if (!olist_active) {
+                    int i = 0;
+                    while (i < len && line[i] == ' ') i++;
+                    olist_counter = 0;
+                    while (i < len && isdigit((unsigned char)line[i]))
+                        olist_counter = olist_counter * 10 + (line[i++] - '0');
+                    olist_active = 1;
+                } else {
+                    olist_counter++;
+                }
+            }
+
+            /* Collect all lines belonging to this list item.
+               A continuation line must have >= W leading spaces (or 1 tab),
+               or be a blank line followed by such a line. */
+            int item_end = row + 1;
+            while (item_end < n) {
+                const char *cl = vlines[item_end].text;
+                int blank = (render_get_block_type(cl, 0) == BLOCK_EMPTY);
+                if (blank) {
+                    /* Look ahead past all blanks */
+                    int la = item_end + 1;
+                    while (la < n &&
+                           render_get_block_type(vlines[la].text, 0) == BLOCK_EMPTY)
+                        la++;
+                    if (la >= n) break;  /* trailing blank — stop */
+                    const char *al = vlines[la].text;
+                    int ai = (al[0] == '\t') ? W : 0;
+                    if (ai == 0) while (ai < W && al[ai] == ' ') ai++;
+                    if (ai < W) break;  /* next non-blank is outer level — stop */
+                    item_end = la + 1;  /* include blanks + that line */
+                } else {
+                    int ci = (cl[0] == '\t') ? W : 0;
+                    if (ci == 0) while (ci < W && cl[ci] == ' ') ci++;
+                    if (ci < W) break;
+                    item_end++;
+                }
+            }
+            int count = item_end - row;
+
+            /* Build inner VLine array: strip the W-byte marker/indent prefix */
+            VLine *inner = malloc(count * sizeof(VLine));
+            inner[0] = (VLine){ line + W, (len > W ? len - W : 0),
+                                vlines[row].source_row };
+            for (int k = 1; k < count; k++) {
+                const char *cl   = vlines[row + k].text;
+                int         clen = vlines[row + k].len;
+                int blank2 = (render_get_block_type(cl, 0) == BLOCK_EMPTY);
+                int skip = 0;
+                if (!blank2) {
+                    if (cl[0] == '\t') skip = 1;
+                    else while (skip < W && skip < clen && cl[skip] == ' ')
+                        skip++;
+                }
+                inner[k] = (VLine){ cl + skip, clen - skip,
+                                    vlines[row + k].source_row };
+            }
+
+            /* Recurse — inner content treated as a fresh nested document */
+            PreviewBuffer inner_pb = {0};
+            int inner_cols = (screen_cols > body_indent + W)
+                           ? screen_cols - body_indent - W : 1;
+            preview_gen_vlines(&inner_pb, inner, count, inner_cols, 0,
+                               link_idx, depth + 1, NULL);
+            free(inner);
+
+            /* Assemble output: first inner line gets the marker prefix;
+               remaining inner lines get W spaces of continuation indent. */
+            for (int k = 0; k < inner_pb.num_lines; k++) {
+                PreviewLine *src = &inner_pb.lines[k];
+                int total = body_indent + W + src->len;
+                PreviewLine *pl = pv_add(pb, src->source_row, total);
+                int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
+
+                if (k == 0) {
+                    if (bt == BLOCK_LIST_UNORDERED) {
+                        int leading = 0;
+                        while (leading < len && line[leading] == ' ') leading++;
+                        p = pv_fill(pl, p, leading, ' ', 0, CP_DEFAULT);
+                        pv_set_acs(pl, p, PM_BULLET, A_BOLD, CP_LIST_MARKER);
+                        p++;
+                        pl->text[p] = ' ';
+                        pl->styles[p].cpair = CP_DEFAULT;
+                        p++;
+                        int used = leading + 2;
+                        while (used < W) {
+                            pl->text[p] = ' ';
+                            pl->styles[p].cpair = CP_DEFAULT;
+                            p++; used++;
+                        }
+                    } else {
+                        /* Ordered: find delimiter from source line */
+                        char del = '.';
+                        int di = 0;
+                        while (di < len && line[di] == ' ') di++;
+                        while (di < len && isdigit((unsigned char)line[di])) di++;
+                        if (di < len && (line[di] == '.' || line[di] == ')'))
+                            del = line[di];
+                        char prefix_buf[16];
+                        int prefix_len = snprintf(prefix_buf, sizeof(prefix_buf),
+                                                  "%d%c ", olist_counter, del);
+                        int leading = 0;
+                        while (leading < len && line[leading] == ' ') leading++;
+                        p = pv_fill(pl, p, leading, ' ', 0, CP_DEFAULT);
+                        for (int j = 0; j < prefix_len; j++) {
+                            pl->text[p]         = prefix_buf[j];
+                            pl->styles[p].attr  = A_BOLD;
+                            pl->styles[p].cpair = CP_LIST_MARKER;
+                            p++;
+                        }
+                        int used = leading + prefix_len;
+                        while (used < W) {
+                            pl->text[p] = ' ';
+                            pl->styles[p].cpair = CP_DEFAULT;
+                            p++; used++;
+                        }
+                    }
+                } else {
+                    p = pv_fill(pl, p, W, ' ', 0, CP_DEFAULT);
+                }
+
+                p = pv_copy(pl, p, src->text, src->styles, src->len);
+                pl->len = p;
+                pl->text[p] = '\0';
+            }
+            preview_free(&inner_pb);
+
+            row = item_end;
+            prev_para = NULL;
+            prev_blank = 0;
+            continue;
         }
         case BLOCK_BLOCKQUOTE: {
             /* Collect consecutive blockquote lines */
@@ -1200,6 +1291,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
             }
             preview_free(&inner_pb);
             prev_para = NULL;
+            prev_blank = 0;
             continue;  /* row already past bq_end */
         }
         case BLOCK_SETEXT_H1:
@@ -1208,6 +1300,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                (e.g. at the top of the document).  Suppress in preview. */
             gen_empty(pb, vlines[row].source_row);
             prev_para = NULL;
+            prev_blank = 0;
             row++;
             continue;
         case BLOCK_CODE_CONTENT:
@@ -1228,6 +1321,7 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                     gen_empty(pb, vlines[row + 1].source_row);
                     body_indent = (su == 1) ? 0 : 2;
                     prev_para = NULL;
+                    prev_blank = 0;
                     row += 2;
                     continue;
                 }
@@ -1241,7 +1335,8 @@ static void preview_gen_vlines(PreviewBuffer *pb, const VLine *vlines, int n,
                           link_idx);
             break;
         }
-        prev_para = (bt == BLOCK_PARAGRAPH) ? line : NULL;
+        prev_para  = (bt == BLOCK_PARAGRAPH) ? line : NULL;
+        prev_blank = (bt == BLOCK_EMPTY);
         row++;
     }
 }
