@@ -40,6 +40,7 @@ TEST_OBJS = $(BUILDDIR)/utf8.o $(BUILDDIR)/buffer.o $(BUILDDIR)/undo.o \
             $(BUILDDIR)/render_frontmatter.o \
             $(BUILDDIR)/render_heading.o \
             $(BUILDDIR)/render_codeblock.o \
+            $(BUILDDIR)/olist_edit.o \
             $(BUILDDIR)/links.o $(BUILDDIR)/term.o
 
 TEST_SRCS    = $(wildcard tests/*.c)

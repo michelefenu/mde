@@ -99,7 +99,7 @@ Let's put editing into practice.
 
 - [x] Opened this file in mde
 - [x] Read the editing shortcuts
-- [ ] Toggled a checkbox in edit mode
+- [x] Toggled a checkbox in edit mode
 - [ ] Used undo and redo
 - [ ] Saved the file
 

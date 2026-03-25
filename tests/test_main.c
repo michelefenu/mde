@@ -9,6 +9,7 @@
 #include "undo.h"
 #include "render.h"
 #include "links.h"
+#include "olist_edit.h"
 
 /* ================================================================
  *  utf8 tests
@@ -739,6 +740,162 @@ static void test_bq_lazy_continuation(void)
 }
 
 /* ================================================================
+ *  parse_olist_prefix tests
+ * ================================================================ */
+
+static void test_parse_olist_prefix(void)
+{
+    int indent, num, prefix_end;
+    char delim;
+
+    /* Basic: "1. item" */
+    assert(parse_olist_prefix("1. item", 7, &indent, &num, &delim, &prefix_end) == 1);
+    assert(indent == 0);
+    assert(num == 1);
+    assert(delim == '.');
+    assert(prefix_end == 3);
+
+    /* Paren delimiter: "1) item" */
+    assert(parse_olist_prefix("1) item", 7, &indent, &num, &delim, &prefix_end) == 1);
+    assert(num == 1);
+    assert(delim == ')');
+    assert(prefix_end == 3);
+
+    /* Multi-digit: "99. item" */
+    assert(parse_olist_prefix("99. item", 8, &indent, &num, &delim, &prefix_end) == 1);
+    assert(num == 99);
+    assert(prefix_end == 4);
+
+    /* Indented: "  1. item" */
+    assert(parse_olist_prefix("  1. item", 9, &indent, &num, &delim, &prefix_end) == 1);
+    assert(indent == 2);
+    assert(num == 1);
+    assert(prefix_end == 5);
+
+    /* Bare prefix: "1. " (empty content) */
+    assert(parse_olist_prefix("1. ", 3, &indent, &num, &delim, &prefix_end) == 1);
+    assert(num == 1);
+    assert(prefix_end == 3);
+
+    /* Invalid: plain text */
+    assert(parse_olist_prefix("not a list", 10, &indent, &num, &delim, &prefix_end) == 0);
+
+    /* Invalid: no space after delimiter */
+    assert(parse_olist_prefix("1.no space", 10, &indent, &num, &delim, &prefix_end) == 0);
+
+    /* Invalid: empty string */
+    assert(parse_olist_prefix("", 0, &indent, &num, &delim, &prefix_end) == 0);
+
+    /* Invalid: unordered list */
+    assert(parse_olist_prefix("- item", 6, &indent, &num, &delim, &prefix_end) == 0);
+
+    /* Invalid: just a number, no delimiter */
+    assert(parse_olist_prefix("1", 1, &indent, &num, &delim, &prefix_end) == 0);
+
+    /* Invalid: number then end of line */
+    assert(parse_olist_prefix("1.", 2, &indent, &num, &delim, &prefix_end) == 0);
+}
+
+/* ================================================================
+ *  olist_renumber tests
+ * ================================================================ */
+
+static void test_olist_renumber_basic(void)
+{
+    /* Simulate mid-list insertion: 1-2-2-3 should become 1-2-3-4 */
+    const char *lines[] = { "1. A", "2. ", "2. B", "3. C" };
+    Buffer buf = make_buf(lines, 4);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    int count = olist_renumber(&buf, &undo, 2, 3, 0, '.', 1);
+    assert(count > 0);
+    assert(strcmp(buffer_line_data(&buf, 0), "1. A") == 0);
+    assert(strcmp(buffer_line_data(&buf, 1), "2. ") == 0);
+    assert(strcmp(buffer_line_data(&buf, 2), "3. B") == 0);
+    assert(strcmp(buffer_line_data(&buf, 3), "4. C") == 0);
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+static void test_olist_renumber_stops_at_blank(void)
+{
+    const char *lines[] = { "2. ", "1. B", "", "1. C" };
+    Buffer buf = make_buf(lines, 4);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    olist_renumber(&buf, &undo, 1, 3, 0, '.', 1);
+    assert(strcmp(buffer_line_data(&buf, 1), "3. B") == 0);
+    assert(strcmp(buffer_line_data(&buf, 3), "1. C") == 0); /* untouched */
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+static void test_olist_renumber_stops_at_delim(void)
+{
+    const char *lines[] = { "2. A", "1) B" };
+    Buffer buf = make_buf(lines, 2);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    olist_renumber(&buf, &undo, 1, 3, 0, '.', 1);
+    assert(strcmp(buffer_line_data(&buf, 1), "1) B") == 0); /* untouched */
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+static void test_olist_renumber_stops_at_indent(void)
+{
+    const char *lines[] = { "2. A", "  1. B" };
+    Buffer buf = make_buf(lines, 2);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    olist_renumber(&buf, &undo, 1, 3, 0, '.', 1);
+    assert(strcmp(buffer_line_data(&buf, 1), "  1. B") == 0); /* untouched */
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+static void test_olist_renumber_width_change(void)
+{
+    /* Number width change: 9 -> 10 */
+    const char *lines[] = { "9. I", "9. J" };
+    Buffer buf = make_buf(lines, 2);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    olist_renumber(&buf, &undo, 1, 10, 0, '.', 1);
+    assert(strcmp(buffer_line_data(&buf, 1), "10. J") == 0);
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+static void test_olist_renumber_noop(void)
+{
+    /* Already correctly numbered -- no changes */
+    const char *lines[] = { "1. A", "2. B", "3. C" };
+    Buffer buf = make_buf(lines, 3);
+    UndoStack undo;
+    undo_stack_init(&undo);
+
+    int count = olist_renumber(&buf, &undo, 0, 1, 0, '.', 1);
+    assert(count == 0);
+    assert(strcmp(buffer_line_data(&buf, 0), "1. A") == 0);
+    assert(strcmp(buffer_line_data(&buf, 1), "2. B") == 0);
+    assert(strcmp(buffer_line_data(&buf, 2), "3. C") == 0);
+
+    undo_stack_free(&undo);
+    buffer_free(&buf);
+}
+
+/* ================================================================
  *  main
  * ================================================================ */
 
@@ -799,6 +956,17 @@ int main(void)
     test_bq_heading_strips_hashes();
     test_bq_nested_two_bars();
     test_bq_lazy_continuation();
+
+    /* parse_olist_prefix */
+    test_parse_olist_prefix();
+
+    /* olist_renumber */
+    test_olist_renumber_basic();
+    test_olist_renumber_stops_at_blank();
+    test_olist_renumber_stops_at_delim();
+    test_olist_renumber_stops_at_indent();
+    test_olist_renumber_width_change();
+    test_olist_renumber_noop();
 
     printf("All tests passed.\n");
     return 0;

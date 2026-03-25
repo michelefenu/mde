@@ -9,6 +9,7 @@
 #include "preview_ui.h"
 #include "toc.h"
 #include "command.h"
+#include "olist_edit.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -260,17 +261,17 @@ static int list_next_prefix(const char *line, char *out, int out_size)
     }
 
     /* Ordered: 1. item, 1) item */
-    if (isdigit((unsigned char)line[i])) {
-        int j = i, num = 0;
-        while (isdigit((unsigned char)line[j])) { num = num * 10 + (line[j] - '0'); j++; }
-        char delim = line[j];
-        if ((delim == '.' || delim == ')') && line[j + 1] == ' ') {
+    {
+        int o_indent, num, prefix_end;
+        char delim;
+        int len = (int)strlen(line);
+        if (parse_olist_prefix(line, len, &o_indent, &num, &delim, &prefix_end)) {
             char numbuf[24];
             int nlen = snprintf(numbuf, sizeof(numbuf), "%d%c ", num + 1, delim);
-            int plen = indent + nlen;
+            int plen = o_indent + nlen;
             if (plen >= out_size) return 0;
-            memcpy(out, line, indent);
-            memcpy(out + indent, numbuf, nlen);
+            memcpy(out, line, o_indent);
+            memcpy(out + o_indent, numbuf, nlen);
             return plen;
         }
     }
@@ -313,6 +314,20 @@ void editor_insert_newline(Editor *ed)
                   &ch, 1, ed->cx, ed->cy, ed->undo_seq);
         buffer_insert_char(&ed->buf, ed->cy, ed->cx, (unsigned char)ch);
         ed->cx++;
+    }
+
+    /* Renumber subsequent ordered list items (same undo_seq for atomic undo) */
+    if (plen > 0 && ed->cy + 1 < ed->buf.num_lines) {
+        const char *new_line = buffer_line_data(&ed->buf, ed->cy);
+        int new_len = buffer_line_len(&ed->buf, ed->cy);
+        int o_indent, num, prefix_end;
+        char delim;
+        if (parse_olist_prefix(new_line, new_len,
+                               &o_indent, &num, &delim, &prefix_end)) {
+            ed->dirty += olist_renumber(&ed->buf, &ed->undo, ed->cy + 1,
+                                        num + 1, o_indent, delim,
+                                        ed->undo_seq);
+        }
     }
 }
 
