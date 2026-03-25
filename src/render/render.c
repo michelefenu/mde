@@ -8,6 +8,7 @@
 #include "render_ulist.h"
 #include "render_todo.h"
 #include "render_codeblock.h"
+#include "syntax.h"
 #include "utf8.h"
 #include "xalloc.h"
 #include <stdio.h>
@@ -63,6 +64,10 @@ void render_init_colors(void)
     init_pair(CP_TODO_DONE,   dim_fg,        -1);
     init_pair(CP_TODO_META,   COLOR_MAGENTA, -1);
     init_pair(CP_FRONTMATTER, dim_fg,        -1);
+    init_pair(CP_SYN_KEYWORD, COLOR_MAGENTA, -1);
+    init_pair(CP_SYN_STRING,  COLOR_YELLOW,  -1);
+    init_pair(CP_SYN_COMMENT, dim_fg,        -1);
+    init_pair(CP_SYN_NUMBER,  COLOR_CYAN,    -1);
 }
 
 /* ================================================================
@@ -489,7 +494,8 @@ static void apply_todo_styles(const char *line, int len, CharStyle *styles)
  * ================================================================ */
 
 static void compute_styles(const char *line, int len, CharStyle *styles,
-                           BlockType btype, int hlevel)
+                           BlockType btype, int hlevel,
+                           const SyntaxLang *lang)
 {
     /* Base style from block type */
     attr_t base_attr  = 0;
@@ -517,6 +523,8 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
     case BLOCK_CODE_INDENTED:
         for (int i = 0; i < len; i++)
             styles[i].cpair = CP_CODE_BLOCK;
+        if (lang)
+            syntax_highlight_line(lang, line, len, styles);
         return;
 
     case BLOCK_HRULE:
@@ -565,10 +573,11 @@ static void compute_styles(const char *line, int len, CharStyle *styles,
 
 void render_draw_line(int screen_y, int screen_cols,
                       const char *text, int len, int scroll_x,
-                      BlockType btype, int hlevel)
+                      BlockType btype, int hlevel,
+                      const SyntaxLang *lang)
 {
     CharStyle *styles = calloc(len + 1, sizeof(CharStyle));
-    compute_styles(text, len, styles, btype, hlevel);
+    compute_styles(text, len, styles, btype, hlevel, lang);
 
     move(screen_y, 0);
     clrtoeol();
@@ -696,10 +705,11 @@ void render_wrap_cursor_pos(const char *text, int len, int cols,
 int render_draw_line_wrapped(int screen_y, int screen_cols,
                              const char *text, int len,
                              BlockType btype, int hlevel,
-                             int max_rows, int content_indent)
+                             int max_rows, int content_indent,
+                             const SyntaxLang *lang)
 {
     CharStyle *styles = calloc(len + 1, sizeof(CharStyle));
-    compute_styles(text, len, styles, btype, hlevel);
+    compute_styles(text, len, styles, btype, hlevel, lang);
 
     int row = 0;
     int i   = 0;

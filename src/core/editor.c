@@ -3,6 +3,7 @@
 #include "render.h"
 #include "render_table.h"
 #include "render_frontmatter.h"
+#include "syntax.h"
 #include "utf8.h"
 #include "search.h"
 #include "help.h"
@@ -537,13 +538,34 @@ void editor_save(Editor *ed)
  *  Screen drawing
  * ================================================================ */
 
+/* Parse the language identifier from a fence line for syntax highlighting. */
+static const SyntaxLang *parse_fence_lang(const char *line, int len)
+{
+    int i = 0;
+    while (i < len && (line[i] == ' ' || line[i] == '`' || line[i] == '~')) i++;
+    int start = i;
+    while (i < len && line[i] != ' ' && line[i] != '`' && line[i] != '~') i++;
+    if (i > start)
+        return syntax_find_lang(line + start, i - start);
+    return NULL;
+}
+
 static void editor_draw_rows(Editor *ed)
 {
-    /* Compute initial code-block state at scroll_y */
+    /* Compute initial code-block state and language at scroll_y */
     int in_code = 0;
+    const SyntaxLang *code_lang = NULL;
     for (int i = 0; i < ed->scroll_y && i < ed->buf.num_lines; i++) {
-        if (render_is_code_fence(buffer_line_data(&ed->buf, i)))
-            in_code = !in_code;
+        const char *ld = buffer_line_data(&ed->buf, i);
+        if (render_is_code_fence(ld)) {
+            if (!in_code) {
+                in_code = 1;
+                code_lang = parse_fence_lang(ld, buffer_line_len(&ed->buf, i));
+            } else {
+                in_code = 0;
+                code_lang = NULL;
+            }
+        }
     }
 
     int fm_end = render_frontmatter_extent(&ed->buf);
@@ -561,19 +583,33 @@ static void editor_draw_rows(Editor *ed)
             int       hl   = (bt == BLOCK_HEADING)
                              ? render_heading_level(line) : 0;
 
-            if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
+            if (bt == BLOCK_CODE_FENCE) {
+                if (!in_code) {
+                    in_code = 1;
+                    code_lang = parse_fence_lang(line, len);
+                } else {
+                    in_code = 0;
+                    code_lang = NULL;
+                }
+            }
+
+            const SyntaxLang *line_lang =
+                (bt == BLOCK_CODE_CONTENT || bt == BLOCK_CODE_INDENTED)
+                ? code_lang : NULL;
 
             int is_tbl = (bt == BLOCK_PARAGRAPH && is_table_line(line, len));
             int used;
             if (is_tbl) {
-                render_draw_line(y, ed->screen_cols, line, len, 0, bt, hl);
+                render_draw_line(y, ed->screen_cols, line, len, 0, bt, hl,
+                                 line_lang);
                 used = 1;
             } else {
                 int ci = render_line_content_indent(line, len, bt);
                 int remaining = ed->screen_rows - y;
                 used = render_draw_line_wrapped(y, ed->screen_cols,
                                                     line, len, bt, hl,
-                                                    remaining, ci);
+                                                    remaining, ci,
+                                                    line_lang);
             }
             y += used;
             frow++;
@@ -601,10 +637,22 @@ static void editor_draw_rows(Editor *ed)
                 int       hl   = (bt == BLOCK_HEADING)
                                  ? render_heading_level(line) : 0;
 
-                if (bt == BLOCK_CODE_FENCE) in_code = !in_code;
+                if (bt == BLOCK_CODE_FENCE) {
+                    if (!in_code) {
+                        in_code = 1;
+                        code_lang = parse_fence_lang(line, len);
+                    } else {
+                        in_code = 0;
+                        code_lang = NULL;
+                    }
+                }
+
+                const SyntaxLang *line_lang =
+                    (bt == BLOCK_CODE_CONTENT || bt == BLOCK_CODE_INDENTED)
+                    ? code_lang : NULL;
 
                 render_draw_line(y, ed->screen_cols, line, len,
-                                 ed->scroll_x, bt, hl);
+                                 ed->scroll_x, bt, hl, line_lang);
 
                 /* Overlay search highlights */
                 if (ed->search_query_len > 0) {

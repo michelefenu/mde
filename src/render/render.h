@@ -5,6 +5,8 @@
 #include "term.h"
 #include "buffer.h"
 
+typedef struct SyntaxLang SyntaxLang;
+
 /* Color pairs */
 enum {
     CP_DEFAULT = 0,
@@ -27,6 +29,10 @@ enum {
     CP_TODO_DONE,   /* completed task [x] */
     CP_TODO_META,   /* metadata: ~dur #tag @name date */
     CP_FRONTMATTER, /* YAML front-matter fence and content */
+    CP_SYN_KEYWORD, /* syntax highlight: reserved words */
+    CP_SYN_STRING,  /* syntax highlight: string/char literals */
+    CP_SYN_COMMENT, /* syntax highlight: comments */
+    CP_SYN_NUMBER,  /* syntax highlight: numeric literals */
 };
 
 /* Block-level element types */
@@ -65,7 +71,8 @@ typedef struct {
 void      render_init_colors(void);
 void      render_draw_line(int screen_y, int screen_cols,
                            const char *text, int len, int scroll_x,
-                           BlockType btype, int hlevel);
+                           BlockType btype, int hlevel,
+                           const SyntaxLang *lang);
 BlockType render_get_block_type(const char *line, int in_code_block);
 BlockType render_get_block_type_ctx(const char *line, const char *prev_line, int in_code_block);
 int       render_is_code_fence(const char *line);
@@ -81,7 +88,8 @@ void      render_wrap_cursor_pos(const char *text, int len, int cols,
 int       render_draw_line_wrapped(int screen_y, int screen_cols,
                                    const char *text, int len,
                                    BlockType btype, int hlevel,
-                                   int max_rows, int content_indent);
+                                   int max_rows, int content_indent,
+                                   const SyntaxLang *lang);
 
 /* ── Preview mode ── */
 

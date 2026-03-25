@@ -10,6 +10,7 @@
 #include "render.h"
 #include "links.h"
 #include "olist_edit.h"
+#include "syntax.h"
 
 /* ================================================================
  *  utf8 tests
@@ -896,6 +897,149 @@ static void test_olist_renumber_noop(void)
 }
 
 /* ================================================================
+ *  syntax highlighting tests
+ * ================================================================ */
+
+static void test_syntax_find_lang(void)
+{
+    /* Known languages */
+    assert(syntax_find_lang("c", 1) != NULL);
+    assert(syntax_find_lang("C", 1) != NULL);    /* case insensitive */
+    assert(syntax_find_lang("python", 6) != NULL);
+    assert(syntax_find_lang("py", 2) != NULL);
+    assert(syntax_find_lang("javascript", 10) != NULL);
+    assert(syntax_find_lang("js", 2) != NULL);
+    assert(syntax_find_lang("sh", 2) != NULL);
+    assert(syntax_find_lang("bash", 4) != NULL);
+    assert(syntax_find_lang("shell", 5) != NULL);
+
+    /* Unknown language */
+    assert(syntax_find_lang("ruby", 4) == NULL);
+    assert(syntax_find_lang("rust", 4) == NULL);
+
+    /* Edge cases */
+    assert(syntax_find_lang(NULL, 0) == NULL);
+    assert(syntax_find_lang("", 0) == NULL);
+}
+
+static void test_syntax_highlight_keywords(void)
+{
+    const SyntaxLang *c = syntax_find_lang("c", 1);
+    assert(c != NULL);
+
+    const char *line = "int x = 42;";
+    int len = (int)strlen(line);
+    CharStyle styles[32];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(c, line, len, styles);
+
+    /* "int" (positions 0-2) should be keyword */
+    assert(styles[0].cpair == CP_SYN_KEYWORD);
+    assert(styles[1].cpair == CP_SYN_KEYWORD);
+    assert(styles[2].cpair == CP_SYN_KEYWORD);
+
+    /* "42" (positions 8-9) should be number */
+    assert(styles[8].cpair == CP_SYN_NUMBER);
+    assert(styles[9].cpair == CP_SYN_NUMBER);
+}
+
+static void test_syntax_highlight_strings(void)
+{
+    const SyntaxLang *c = syntax_find_lang("c", 1);
+    const char *line = "char *s = \"hello\";";
+    int len = (int)strlen(line);
+    CharStyle styles[32];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(c, line, len, styles);
+
+    /* "hello" starts at position 10 (the ") and ends at 16 (the ") */
+    assert(styles[10].cpair == CP_SYN_STRING);
+    assert(styles[15].cpair == CP_SYN_STRING);
+    assert(styles[16].cpair == CP_SYN_STRING);
+}
+
+static void test_syntax_highlight_comments(void)
+{
+    const SyntaxLang *c = syntax_find_lang("c", 1);
+    const char *line = "x++; // increment";
+    int len = (int)strlen(line);
+    CharStyle styles[32];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(c, line, len, styles);
+
+    /* "// increment" starts at position 5 */
+    for (int i = 5; i < len; i++)
+        assert(styles[i].cpair == CP_SYN_COMMENT);
+}
+
+static void test_syntax_highlight_python(void)
+{
+    const SyntaxLang *py = syntax_find_lang("python", 6);
+    assert(py != NULL);
+
+    const char *line = "def foo(): # comment";
+    int len = (int)strlen(line);
+    CharStyle styles[32];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(py, line, len, styles);
+
+    /* "def" should be keyword */
+    assert(styles[0].cpair == CP_SYN_KEYWORD);
+    assert(styles[1].cpair == CP_SYN_KEYWORD);
+    assert(styles[2].cpair == CP_SYN_KEYWORD);
+
+    /* "# comment" should be comment */
+    for (int i = 11; i < len; i++)
+        assert(styles[i].cpair == CP_SYN_COMMENT);
+}
+
+static void test_syntax_highlight_null_lang(void)
+{
+    /* Passing NULL lang should be a no-op */
+    const char *line = "int x;";
+    int len = (int)strlen(line);
+    CharStyle styles[16];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(NULL, line, len, styles);
+
+    /* All styles should remain CP_CODE_BLOCK */
+    for (int i = 0; i < len; i++)
+        assert(styles[i].cpair == CP_CODE_BLOCK);
+}
+
+static void test_syntax_escaped_string(void)
+{
+    const SyntaxLang *c = syntax_find_lang("c", 1);
+    const char *line = "\"he\\\"llo\"";
+    int len = (int)strlen(line);
+    CharStyle styles[16];
+    memset(styles, 0, sizeof(styles));
+    for (int i = 0; i < len; i++)
+        styles[i].cpair = CP_CODE_BLOCK;
+
+    syntax_highlight_line(c, line, len, styles);
+
+    /* Entire string including escaped quote should be highlighted */
+    for (int i = 0; i < len; i++)
+        assert(styles[i].cpair == CP_SYN_STRING);
+}
+
+/* ================================================================
  *  main
  * ================================================================ */
 
@@ -967,6 +1111,15 @@ int main(void)
     test_olist_renumber_stops_at_indent();
     test_olist_renumber_width_change();
     test_olist_renumber_noop();
+
+    /* syntax highlighting */
+    test_syntax_find_lang();
+    test_syntax_highlight_keywords();
+    test_syntax_highlight_strings();
+    test_syntax_highlight_comments();
+    test_syntax_highlight_python();
+    test_syntax_highlight_null_lang();
+    test_syntax_escaped_string();
 
     printf("All tests passed.\n");
     return 0;

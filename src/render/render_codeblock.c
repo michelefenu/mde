@@ -1,5 +1,6 @@
 /* render_codeblock — Fenced and indented code block rendering for preview. */
 #include "render_codeblock.h"
+#include "syntax.h"
 #include "utf8.h"
 #include "xalloc.h"
 #include <stdlib.h>
@@ -33,6 +34,8 @@ void gen_code_block_v(PreviewBuffer *pb, const VLine *vlines, int n,
     int lang_start = fi;
     while (fi < flen && fence[fi] != ' ' && fence[fi] != '`' && fence[fi] != '~') fi++;
     int lang_len = fi - lang_start;
+
+    const SyntaxLang *lang = syntax_find_lang(fence + lang_start, lang_len);
 
     /* Find max content display width (columns, not bytes) */
     int max_w = 0;
@@ -107,11 +110,16 @@ void gen_code_block_v(PreviewBuffer *pb, const VLine *vlines, int n,
         int p = pv_fill(pl, 0, body_indent, ' ', 0, CP_DEFAULT);
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
         pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
+        int text_start = p;
         for (int j = 0; j < write_len; j++) {
             pl->text[p]         = line[j];
             pl->styles[p].cpair = CP_CODE_BLOCK;
             p++;
         }
+        /* Apply syntax highlighting to the text portion */
+        if (lang)
+            syntax_highlight_line(lang, line, write_len,
+                                  pl->styles + text_start);
         p = pv_fill(pl, p, pad, ' ', 0, CP_CODE_BLOCK);
         pl->text[p] = ' '; pl->styles[p].cpair = CP_CODE_BLOCK; p++;
         pv_set_acs(pl, p, PM_VLINE, 0, CP_DIMMED); p++;
