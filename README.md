@@ -10,10 +10,10 @@
 
 mde is a terminal-based markdown editor. It operates in two modes:
 
-- **Edit mode** - live syntax styling with dimmed delimiters. Headings,
+- **Edit mode**: live syntax styling with dimmed delimiters. Headings,
   emphasis, links, lists, code blocks, tables, blockquotes, and
   horizontal rules are coloured as text is entered.
-- **Preview mode** - read-only rendered view. Syntax markers are hidden,
+- **Preview mode**: read-only rendered view. Syntax markers are hidden,
   tables use box-drawing borders, and headings are indented by level.
 
 Switching between modes is done with Ctrl+P or Escape.
@@ -29,7 +29,7 @@ output.
 
 ## Requirements
 
-A C99 compiler (gcc or clang). No external libraries required — terminal
+A C99 compiler (gcc or clang). No external libraries required, terminal
 I/O is handled via POSIX interfaces (`termios`, `ioctl`, ANSI escape sequences).
 
 ## Compiling
