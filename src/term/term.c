@@ -46,7 +46,7 @@ static int  g_outpos = 0;
 static void out_flush(void)
 {
     if (g_outpos > 0) {
-        (void)write(STDOUT_FILENO, g_outbuf, (size_t)g_outpos);
+        if (write(STDOUT_FILENO, g_outbuf, (size_t)g_outpos) < 0) { /* terminal output -- nothing to do */ }
         g_outpos = 0;
     }
 }
@@ -56,7 +56,7 @@ static void out_raw(const char *s, int n)
     if (g_outpos + n > OUTBUF_SIZE)
         out_flush();
     if (n > OUTBUF_SIZE) {
-        (void)write(STDOUT_FILENO, s, (size_t)n);
+        if (write(STDOUT_FILENO, s, (size_t)n) < 0) { /* terminal output -- nothing to do */ }
         return;
     }
     memcpy(g_outbuf + g_outpos, s, (size_t)n);

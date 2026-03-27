@@ -286,6 +286,24 @@ void editor_insert_newline(Editor *ed)
     char prefix[64];
     int plen = list_next_prefix(cur, prefix, sizeof(prefix));
 
+    /* If cursor is inside the list prefix region, skip list continuation */
+    if (plen > 0) {
+        int cur_prefix_end = 0;
+        int i = 0;
+        while (cur[i] == ' ') i++;
+        if ((cur[i] == '-' || cur[i] == '*' || cur[i] == '+') && cur[i + 1] == ' ') {
+            cur_prefix_end = i + 2;
+        } else {
+            int o_indent, num, pe;
+            char delim;
+            int len = buffer_line_len(&ed->buf, ed->cy);
+            if (parse_olist_prefix(cur, len, &o_indent, &num, &delim, &pe))
+                cur_prefix_end = pe;
+        }
+        if (ed->cx < cur_prefix_end)
+            plen = 0;
+    }
+
     /* Empty list item: exit list mode by deleting the prefix, no newline */
     if (plen > 0 && buffer_line_len(&ed->buf, ed->cy) <= plen) {
         int cur_plen = buffer_line_len(&ed->buf, ed->cy);

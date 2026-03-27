@@ -180,7 +180,7 @@ int links_find_anchor(Buffer *buf, const char *anchor)
             }
         }
 
-        char final_slug[512];
+        char final_slug[528];
         if (dup_idx >= 0) {
             seen[dup_idx].count++;
             snprintf(final_slug, sizeof(final_slug), "%s-%d",

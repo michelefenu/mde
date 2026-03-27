@@ -1,5 +1,5 @@
 CC      ?= cc
-CFLAGS   = -Wall -Wextra -std=gnu99 -O2 -D_XOPEN_SOURCE_EXTENDED
+CFLAGS   = -Wall -Wextra -std=gnu99 -O2 -D_GNU_SOURCE
 LDFLAGS  =
 
 SRCDIR   = src
