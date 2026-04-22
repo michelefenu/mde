@@ -181,11 +181,8 @@ char *buffer_line_data(Buffer *buf, int row)
     return buf->lines[row].data;
 }
 
-int buffer_load(Buffer *buf, const char *filename)
+int buffer_load_fp(Buffer *buf, FILE *fp)
 {
-    FILE *fp = fopen(filename, "r");
-    if (!fp) return -1;
-
     /* Clear existing content */
     for (int i = 0; i < buf->num_lines; i++)
         line_free(&buf->lines[i]);
@@ -201,12 +198,20 @@ int buffer_load(Buffer *buf, const char *filename)
         buffer_insert_line(buf, buf->num_lines, line, len);
     }
     free(line);
-    fclose(fp);
 
     if (buf->num_lines == 0)
         buffer_insert_line(buf, 0, "", 0);
 
     return 0;
+}
+
+int buffer_load(Buffer *buf, const char *filename)
+{
+    FILE *fp = fopen(filename, "r");
+    if (!fp) return -1;
+    int ret = buffer_load_fp(buf, fp);
+    fclose(fp);
+    return ret;
 }
 
 int buffer_save(Buffer *buf, const char *filename)

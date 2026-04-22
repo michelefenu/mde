@@ -2,6 +2,7 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct {
@@ -28,6 +29,7 @@ void   buffer_truncate_line(Buffer *buf, int row, int at);
 int    buffer_line_len(Buffer *buf, int row);
 char  *buffer_line_data(Buffer *buf, int row);
 int    buffer_load(Buffer *buf, const char *filename);
+int    buffer_load_fp(Buffer *buf, FILE *fp);
 int    buffer_save(Buffer *buf, const char *filename);
 
 #endif
